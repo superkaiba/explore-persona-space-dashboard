@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-export const runtime = "nodejs";
-export const maxDuration = 300; // 5 min, since the agent can take longer
+export const runtime = "edge";
+export const maxDuration = 300; // streaming responses on edge can run past static caps
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
