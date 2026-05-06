@@ -178,9 +178,9 @@ export function ChatRail() {
               <div className="rounded-lg border border-dashed border-border bg-subtle p-3 text-muted">
                 <p className="font-medium text-fg">Ask anything about your research.</p>
                 <p className="mt-1.5 leading-relaxed">
-                  I can search claims, fetch full bodies, and surface what's
+                  I can search claims, fetch full bodies, and surface what is
                   in-progress. Try:{" "}
-                  <em>&ldquo;What's the latest finding on EM and persona collapse?&rdquo;</em>
+                  <em>&ldquo;Latest finding on EM and persona collapse?&rdquo;</em>
                 </p>
               </div>
             ) : (
