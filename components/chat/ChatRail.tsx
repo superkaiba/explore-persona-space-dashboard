@@ -72,15 +72,35 @@ export function ChatRail() {
     };
 
     try {
-      const res = await fetch("/api/chat-full", {
+      // Step 1: mint a short-lived HMAC token via Vercel (auth-gated)
+      const tokRes = await fetch("/api/chat-token", { method: "POST" });
+      if (!tokRes.ok) {
+        const errTxt = await tokRes.text().catch(() => tokRes.statusText);
+        updateAssistant((m) => {
+          m.blocks.push({ kind: "text", text: `❌ Auth: ${errTxt || tokRes.statusText}` });
+        });
+        return;
+      }
+      const { token, sidecar_url: sidecarUrl } = (await tokRes.json()) as {
+        token: string;
+        sidecar_url: string;
+      };
+
+      // Step 2: stream directly from the sidecar — no Vercel in the data path
+      const res = await fetch(`${sidecarUrl}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           messages: [
-            ...messages.filter((m) => m.role === "user").map((m) => ({
-              role: "user",
-              content: (m as Extract<Msg, { role: "user" }>).text,
-            })),
+            ...messages
+              .filter((m) => m.role === "user")
+              .map((m) => ({
+                role: "user",
+                content: (m as Extract<Msg, { role: "user" }>).text,
+              })),
             { role: "user", content: text },
           ],
         }),

@@ -54,6 +54,44 @@ if not os.path.isfile(CLAUDE_BIN) or not os.access(CLAUDE_BIN, os.X_OK):
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────
+import base64
+import hashlib
+import hmac
+import time as _time
+
+TOKEN_MAX_TTL_MS = 10 * 60 * 1000  # accept tokens with exp at most 10min in the future
+
+
+def _b64url_decode(s: str) -> bytes:
+    s += "=" * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s)
+
+
+def _verify_hmac_token(token: str) -> bool:
+    """Token format: base64url(exp_ms_str) "." base64url(hmac_sha256(SECRET, exp_ms_str))"""
+    try:
+        payload_b64, sig_b64 = token.split(".", 1)
+    except ValueError:
+        return False
+    try:
+        payload = _b64url_decode(payload_b64).decode("ascii")
+        exp_ms = int(payload)
+    except (ValueError, UnicodeDecodeError):
+        return False
+    now_ms = int(_time.time() * 1000)
+    if exp_ms < now_ms:
+        return False
+    if exp_ms > now_ms + TOKEN_MAX_TTL_MS:
+        return False
+    expected_sig = hmac.new(
+        SHARED_SECRET.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    expected_b64 = base64.urlsafe_b64encode(expected_sig).rstrip(b"=").decode("ascii")
+    return hmac.compare_digest(expected_b64, sig_b64)
+
+
 def require_secret(request: Request) -> None:
     if not SHARED_SECRET:
         raise HTTPException(503, "sidecar not configured (missing SIDECAR_SHARED_SECRET)")
@@ -61,8 +99,12 @@ def require_secret(request: Request) -> None:
     if not auth.lower().startswith("bearer "):
         raise HTTPException(401, "missing bearer token")
     token = auth[7:].strip()
-    if not secrets.compare_digest(token, SHARED_SECRET):
-        raise HTTPException(403, "invalid token")
+    # Accept either the long-lived shared secret (proxy path) OR a short-lived HMAC token.
+    if secrets.compare_digest(token, SHARED_SECRET):
+        return
+    if _verify_hmac_token(token):
+        return
+    raise HTTPException(403, "invalid token")
 
 
 # ── App ───────────────────────────────────────────────────────────────────
