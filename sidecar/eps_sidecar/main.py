@@ -124,26 +124,37 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
     env = {**os.environ, "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY}
 
     async def event_stream() -> AsyncIterator[dict[str, str]]:
+        # claude-code's stream-json `init` event lists every tool / skill /
+        # agent / plugin / MCP server, easily exceeding asyncio's default
+        # 64KB readline limit. Raise it to 16MB so the parser doesn't choke.
         proc = await asyncio.create_subprocess_exec(
             *args,
             cwd=WORKDIR,
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=16 * 1024 * 1024,
         )
         try:
             assert proc.stdout is not None
             async with asyncio.timeout(SUBPROC_TIMEOUT_S):
-                async for raw in proc.stdout:
-                    line = raw.decode("utf-8", errors="replace").strip()
-                    if not line:
-                        continue
-                    try:
-                        evt = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    for sse in translate(evt):
-                        yield {"event": sse[0], "data": json.dumps(sse[1])}
+                buf = b""
+                while True:
+                    chunk = await proc.stdout.read(65536)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        raw, buf = buf.split(b"\n", 1)
+                        line = raw.decode("utf-8", errors="replace").strip()
+                        if not line:
+                            continue
+                        try:
+                            evt = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        for sse in translate(evt):
+                            yield {"event": sse[0], "data": json.dumps(sse[1])}
                 code = await proc.wait()
                 if code != 0:
                     err = (
