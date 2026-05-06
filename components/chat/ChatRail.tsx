@@ -21,7 +21,7 @@ export function ChatRail() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [pending, setPending] = useState(false);
-  const [mode, setMode] = useState<Mode>("lite");
+  const [mode, setMode] = useState<Mode>("full");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
