@@ -17,6 +17,7 @@
     "db:backfill": "tsx scripts/backfill.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.94.0",
     "@dagrejs/dagre": "^3.0.0",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
