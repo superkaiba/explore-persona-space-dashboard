@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ReactFlow,
@@ -14,6 +14,7 @@ import "@xyflow/react/dist/style.css";
 
 import ClaimNode, { type ClaimNodeType, type ClaimNodeData } from "./ClaimNode";
 import { dagreLayout } from "./dagreLayout";
+import ClaimHoverPanel, { type HoverClaim } from "./ClaimHoverPanel";
 
 export type ClaimGraphProps = {
   claims: {
@@ -21,6 +22,7 @@ export type ClaimGraphProps = {
     title: string;
     confidence: ClaimNodeData["confidence"];
     githubIssueNumber: number | null;
+    body: string;
   }[];
   edges: { fromId: string; toId: string; type: string }[];
 };
@@ -35,9 +37,21 @@ const minimapColor = (n: ClaimNodeType) => {
   return "#d4d4d4";
 };
 
+const HOVER_OPEN_DELAY = 250;
+const HOVER_CLOSE_DELAY = 200;
+
 export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<"ALL" | "HIGH" | "MODERATE" | "LOW">("ALL");
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const claimsById = useMemo(() => {
+    const m = new Map<string, HoverClaim>();
+    for (const c of claims) m.set(c.id, c);
+    return m;
+  }, [claims]);
 
   const { nodes, edges } = useMemo(() => {
     const visible = filter === "ALL" ? claims : claims.filter((c) => c.confidence === filter);
@@ -71,12 +85,51 @@ export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps)
     };
   }, [claims, rawEdges, filter]);
 
-  const onNodeClick: NodeMouseHandler<ClaimNodeType> = useCallback(
-    (_e, node) => {
-      router.push(`/claim/${node.id}`);
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const cancelOpen = useCallback(() => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleOpen = useCallback(
+    (id: string) => {
+      cancelOpen();
+      cancelClose();
+      openTimerRef.current = setTimeout(() => setHoveredId(id), HOVER_OPEN_DELAY);
     },
+    [cancelOpen, cancelClose],
+  );
+
+  const scheduleClose = useCallback(() => {
+    cancelOpen();
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => setHoveredId(null), HOVER_CLOSE_DELAY);
+  }, [cancelOpen, cancelClose]);
+
+  const onNodeMouseEnter: NodeMouseHandler<ClaimNodeType> = useCallback(
+    (_e, node) => scheduleOpen(node.id),
+    [scheduleOpen],
+  );
+
+  const onNodeMouseLeave: NodeMouseHandler<ClaimNodeType> = useCallback(
+    () => scheduleClose(),
+    [scheduleClose],
+  );
+
+  const onNodeClick: NodeMouseHandler<ClaimNodeType> = useCallback(
+    (_e, node) => router.push(`/claim/${node.id}`),
     [router],
   );
+
+  const hovered = hoveredId ? claimsById.get(hoveredId) ?? null : null;
 
   return (
     <div className="relative h-full w-full">
@@ -85,6 +138,8 @@ export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps)
         edges={edges}
         nodeTypes={nodeTypes}
         onNodeClick={onNodeClick}
+        onNodeMouseEnter={onNodeMouseEnter}
+        onNodeMouseLeave={onNodeMouseLeave}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable
@@ -119,6 +174,17 @@ export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps)
           {nodes.length} claim{nodes.length === 1 ? "" : "s"} · {edges.length} edge{edges.length === 1 ? "" : "s"}
         </span>
       </div>
+
+      {hovered && (
+        <ClaimHoverPanel
+          claim={hovered}
+          onMouseEnter={() => {
+            cancelClose();
+          }}
+          onMouseLeave={scheduleClose}
+          onClose={() => setHoveredId(null)}
+        />
+      )}
     </div>
   );
 }

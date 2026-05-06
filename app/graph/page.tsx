@@ -5,6 +5,8 @@ import ClaimGraph from "@/components/graph/ClaimGraph";
 
 export const dynamic = "force-dynamic";
 
+type BodyJson = { kind: "markdown"; text: string } | null;
+
 export default async function GraphPage() {
   const db = getDb();
 
@@ -14,6 +16,7 @@ export default async function GraphPage() {
       title: claims.title,
       confidence: claims.confidence,
       githubIssueNumber: claims.githubIssueNumber,
+      bodyJson: claims.bodyJson,
     })
     .from(claims)
     .orderBy(desc(claims.updatedAt));
@@ -28,9 +31,20 @@ export default async function GraphPage() {
     (e) => claimIds.has(e.fromId) && claimIds.has(e.toId),
   );
 
+  const claimsForGraph = claimRows.map((c) => {
+    const body = c.bodyJson as BodyJson;
+    return {
+      id: c.id,
+      title: c.title,
+      confidence: c.confidence,
+      githubIssueNumber: c.githubIssueNumber,
+      body: body?.text ?? "",
+    };
+  });
+
   return (
     <div className="h-screen w-full">
-      <ClaimGraph claims={claimRows} edges={filteredEdges} />
+      <ClaimGraph claims={claimsForGraph} edges={filteredEdges} />
     </div>
   );
 }
