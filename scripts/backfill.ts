@@ -72,6 +72,7 @@ function parseSourceIssueRefs(body: string): number[] {
 async function backfillClaims() {
   const issues = gh<GhIssue[]>([
     "issue", "list",
+    "--repo", "superkaiba/explore-persona-space",
     "--label", "clean-results",
     "--state", "all",
     "--limit", "200",
@@ -147,6 +148,7 @@ async function backfillClaims() {
 async function backfillTodos() {
   const issues = gh<GhIssue[]>([
     "issue", "list",
+    "--repo", "superkaiba/explore-persona-space",
     "--label", "status:proposed",
     "--state", "open",
     "--limit", "200",

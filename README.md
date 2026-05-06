@@ -7,9 +7,9 @@ with a spawned Claude Code agent.
 Stack: Next.js 15 · React 19 · Drizzle · Supabase (Postgres + auth + realtime
 + storage) · React Flow · TipTap · Tailwind · Vercel.
 
-This `dashboard/` folder is a self-contained Next.js project inside the
-`explore-persona-space` monorepo. It deploys to Vercel with `dashboard/` as
-the root directory.
+Standalone Next.js project. The research code lives in a sibling repo
+(`superkaiba/explore-persona-space`); this dashboard reads its issue board
+via the `gh` CLI for backfill, but is otherwise decoupled.
 
 ## Access model
 
