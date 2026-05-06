@@ -5,7 +5,7 @@ type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
 // Routes that REQUIRE auth. Everything else is publicly readable.
 // Chat rail + write endpoints land here as they ship (M6/M7).
-const PROTECTED_PREFIXES = ["/api/chat", "/api/write"];
+const PROTECTED_PREFIXES = ["/api/chat", "/api/chat-full", "/api/write"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });

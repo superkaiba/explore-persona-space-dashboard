@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronRight, ChevronLeft, Send, Sparkles, Wrench } from "lucide-react";
+import { ChevronRight, ChevronLeft, Send, Sparkles, Wrench, Zap } from "lucide-react";
 
 type Msg = {
   id: string;
@@ -12,6 +12,8 @@ type Msg = {
   toolCalls?: { name: string; ok?: boolean }[];
 };
 
+type Mode = "lite" | "full";
+
 const STARTER = "Ask about a claim, experiment, or the whole project…";
 
 export function ChatRail() {
@@ -19,6 +21,7 @@ export function ChatRail() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [pending, setPending] = useState(false);
+  const [mode, setMode] = useState<Mode>("lite");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,7 +48,8 @@ export function ChatRail() {
     setPending(true);
 
     try {
-      const res = await fetch("/api/chat", {
+      const endpoint = mode === "full" ? "/api/chat-full" : "/api/chat";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -159,6 +163,31 @@ export function ChatRail() {
               <Sparkles className="h-3 w-3" />
             </span>
             <span>Claude</span>
+            <div className="ml-auto flex items-center gap-0.5 rounded-md border border-border p-0.5 text-[10px]">
+              <button
+                type="button"
+                onClick={() => setMode("lite")}
+                title="Lite: Vercel-hosted, 5 hand-coded tools"
+                className={[
+                  "rounded px-1.5 py-0.5 font-medium uppercase tracking-wider transition-colors",
+                  mode === "lite" ? "bg-fg text-canvas" : "text-muted hover:bg-subtle",
+                ].join(" ")}
+              >
+                lite
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("full")}
+                title="Full: spawned Claude Code agent on the VM with shell + repo access"
+                className={[
+                  "flex items-center gap-1 rounded px-1.5 py-0.5 font-medium uppercase tracking-wider transition-colors",
+                  mode === "full" ? "bg-running text-white" : "text-muted hover:bg-subtle",
+                ].join(" ")}
+              >
+                <Zap className="h-2.5 w-2.5" />
+                full
+              </button>
+            </div>
           </div>
         )}
         <button
