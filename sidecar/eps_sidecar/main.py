@@ -166,6 +166,11 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
     env = {**os.environ, "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY}
 
     async def event_stream() -> AsyncIterator[dict[str, str]]:
+        # Tell the client we're alive immediately so they don't see a 12-15s
+        # blank during claude --print's cold start (loads CLAUDE.md, tools,
+        # agents, plugins, MCP servers, etc.).
+        yield {"event": "starting", "data": json.dumps({"phase": "spawning"})}
+
         # claude-code's stream-json `init` event lists every tool / skill /
         # agent / plugin / MCP server, easily exceeding asyncio's default
         # 64KB readline limit. Raise it to 16MB so the parser doesn't choke.
@@ -177,6 +182,8 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
             stderr=asyncio.subprocess.PIPE,
             limit=16 * 1024 * 1024,
         )
+
+        yield {"event": "starting", "data": json.dumps({"phase": "loading"})}
         try:
             assert proc.stdout is not None
             async with asyncio.timeout(SUBPROC_TIMEOUT_S):
@@ -241,8 +248,12 @@ def translate(evt: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     """
     t = evt.get("type")
     if t == "system":
-        # Skip startup hooks / init noise; surface only failures.
-        if evt.get("subtype") == "hook_response" and evt.get("exit_code", 0) != 0:
+        sub = evt.get("subtype")
+        # Surface init (agent fully loaded, ready to start the actual turn).
+        if sub == "init":
+            return [("ready", {"model": evt.get("model"), "tools": len(evt.get("tools", []))})]
+        # Surface hook failures only; ignore the rest of the startup chatter.
+        if sub == "hook_response" and evt.get("exit_code", 0) != 0:
             return [("error", {"message": f"hook failed: {evt.get('hook_name')}"})]
         return []
 

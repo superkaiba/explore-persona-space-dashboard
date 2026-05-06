@@ -26,9 +26,19 @@ type TextBlock = { kind: "text"; text: string };
 type ThinkingBlock = { kind: "thinking"; text: string };
 type Block = TextBlock | ToolBlock | ThinkingBlock;
 
+type StartupPhase = "spawning" | "loading" | "ready" | null;
+
 type Msg =
   | { id: string; role: "user"; text: string }
-  | { id: string; role: "assistant"; blocks: Block[]; cost?: number; durationMs?: number };
+  | {
+      id: string;
+      role: "assistant";
+      blocks: Block[];
+      cost?: number;
+      durationMs?: number;
+      startupPhase?: StartupPhase;
+      startedAt?: number;
+    };
 
 const STARTER = "Ask about a claim, experiment, or the whole project…";
 
@@ -53,7 +63,13 @@ export function ChatRail() {
 
     const userMsg: Msg = { id: crypto.randomUUID(), role: "user", text };
     const assistantId = crypto.randomUUID();
-    const assistantMsg: Msg = { id: assistantId, role: "assistant", blocks: [] };
+    const assistantMsg: Msg = {
+      id: assistantId,
+      role: "assistant",
+      blocks: [],
+      startupPhase: "spawning",
+      startedAt: Date.now(),
+    };
     setMessages((m) => [...m, userMsg, assistantMsg]);
     setPending(true);
 
@@ -140,7 +156,15 @@ export function ChatRail() {
             continue;
           }
 
-          if (eventName === "token") {
+          if (eventName === "starting") {
+            updateAssistant((m) => {
+              m.startupPhase = (data.phase as StartupPhase) ?? "spawning";
+            });
+          } else if (eventName === "ready") {
+            updateAssistant((m) => {
+              m.startupPhase = "ready";
+            });
+          } else if (eventName === "token") {
             const t = (data.text as string) ?? "";
             updateAssistant((m) => {
               const last = m.blocks[m.blocks.length - 1];
@@ -259,7 +283,13 @@ export function ChatRail() {
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">
-                        {m.blocks.length === 0 && (
+                        {m.startupPhase && m.startupPhase !== "ready" && m.blocks.length === 0 && (
+                          <StartupPill
+                            phase={m.startupPhase}
+                            startedAt={m.startedAt ?? Date.now()}
+                          />
+                        )}
+                        {m.blocks.length === 0 && m.startupPhase === "ready" && (
                           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-muted" />
                         )}
                         {m.blocks.map((block, i) =>
@@ -327,6 +357,22 @@ export function ChatRail() {
         </>
       )}
     </aside>
+  );
+}
+
+function StartupPill({ phase, startedAt }: { phase: StartupPhase; startedAt: number }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setElapsed((Date.now() - startedAt) / 1000), 100);
+    return () => clearInterval(id);
+  }, [startedAt]);
+  const label = phase === "spawning" ? "Spawning agent…" : "Loading tools, MCP servers, memory…";
+  return (
+    <div className="inline-flex items-center gap-2 self-start rounded-md border border-border bg-subtle px-2 py-1 text-[11px] text-muted">
+      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-running" />
+      <span>{label}</span>
+      <span className="font-mono text-[10px]">{elapsed.toFixed(1)}s</span>
+    </div>
   );
 }
 
