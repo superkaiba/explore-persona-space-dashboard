@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300; // 5 min, since the agent can take longer
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   // Auth: Supabase magic-link session
@@ -21,7 +22,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Forward the message stream from the sidecar SSE endpoint.
   const upstreamRes = await fetch(`${sidecarUrl}/chat`, {
     method: "POST",
     headers: {
@@ -38,11 +38,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Sidecar: ${txt}` }, { status: upstreamRes.status });
   }
 
-  return new Response(upstreamRes.body, {
+  // Manually pump the upstream body so Vercel's proxy doesn't buffer until
+  // the upstream closes. Combined with X-Accel-Buffering: no this gives us
+  // real-time SSE delivery.
+  const reader = upstreamRes.body.getReader();
+  const stream = new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel() {
+      void reader.cancel();
+    },
+  });
+
+  return new Response(stream, {
     headers: {
-      "Content-Type": "text/event-stream",
+      "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+      "Content-Encoding": "none",
     },
   });
 }

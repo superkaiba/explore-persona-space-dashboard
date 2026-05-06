@@ -3,16 +3,32 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronRight, ChevronLeft, Send, Sparkles, Wrench, Zap } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronLeft,
+  Send,
+  Sparkles,
+  Wrench,
+  Check,
+  X as XIcon,
+  ChevronDown,
+} from "lucide-react";
 
-type Msg = {
+type ToolBlock = {
+  kind: "tool";
   id: string;
-  role: "user" | "assistant";
-  text: string;
-  toolCalls?: { name: string; ok?: boolean }[];
+  name: string;
+  input: Record<string, unknown>;
+  ok?: boolean;
+  result?: string;
 };
+type TextBlock = { kind: "text"; text: string };
+type ThinkingBlock = { kind: "thinking"; text: string };
+type Block = TextBlock | ToolBlock | ThinkingBlock;
 
-type Mode = "lite" | "full";
+type Msg =
+  | { id: string; role: "user"; text: string }
+  | { id: string; role: "assistant"; blocks: Block[]; cost?: number; durationMs?: number };
 
 const STARTER = "Ask about a claim, experiment, or the whole project…";
 
@@ -21,7 +37,6 @@ export function ChatRail() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [pending, setPending] = useState(false);
-  const [mode, setMode] = useState<Mode>("full");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,32 +52,44 @@ export function ChatRail() {
     setDraft("");
 
     const userMsg: Msg = { id: crypto.randomUUID(), role: "user", text };
-    const assistantMsg: Msg = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      text: "",
-      toolCalls: [],
-    };
-    const next = [...messages, userMsg, assistantMsg];
-    setMessages(next);
+    const assistantId = crypto.randomUUID();
+    const assistantMsg: Msg = { id: assistantId, role: "assistant", blocks: [] };
+    setMessages((m) => [...m, userMsg, assistantMsg]);
     setPending(true);
 
+    const updateAssistant = (fn: (msg: Extract<Msg, { role: "assistant" }>) => void) => {
+      setMessages((m) =>
+        m.map((msg) => {
+          if (msg.id !== assistantId || msg.role !== "assistant") return msg;
+          const copy: Extract<Msg, { role: "assistant" }> = {
+            ...msg,
+            blocks: [...msg.blocks],
+          };
+          fn(copy);
+          return copy;
+        }),
+      );
+    };
+
     try {
-      const endpoint = mode === "full" ? "/api/chat-full" : "/api/chat";
-      const res = await fetch(endpoint, {
+      const res = await fetch("/api/chat-full", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [...messages, userMsg].map(({ role, text }) => ({ role, content: text })),
+          messages: [
+            ...messages.filter((m) => m.role === "user").map((m) => ({
+              role: "user",
+              content: (m as Extract<Msg, { role: "user" }>).text,
+            })),
+            { role: "user", content: text },
+          ],
         }),
       });
       if (!res.ok || !res.body) {
-        const err = await res.text().catch(() => res.statusText);
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === assistantMsg.id ? { ...msg, text: `❌ ${err || res.statusText}` } : msg,
-          ),
-        );
+        const errTxt = await res.text().catch(() => res.statusText);
+        updateAssistant((m) => {
+          m.blocks.push({ kind: "text", text: `❌ ${errTxt || res.statusText}` });
+        });
         return;
       }
 
@@ -86,66 +113,68 @@ export function ChatRail() {
             else if (line.startsWith("data: ")) dataStr = line.slice(6).trim();
           }
           if (!dataStr) continue;
+          let data: Record<string, unknown>;
           try {
-            const data = JSON.parse(dataStr) as Record<string, unknown>;
-            if (eventName === "token") {
-              const t = (data.text as string) ?? "";
-              setMessages((m) =>
-                m.map((msg) =>
-                  msg.id === assistantMsg.id ? { ...msg, text: msg.text + t } : msg,
-                ),
-              );
-            } else if (eventName === "tool_use") {
-              setMessages((m) =>
-                m.map((msg) =>
-                  msg.id === assistantMsg.id
-                    ? {
-                        ...msg,
-                        toolCalls: [
-                          ...(msg.toolCalls ?? []),
-                          { name: data.name as string, ok: undefined },
-                        ],
-                      }
-                    : msg,
-                ),
-              );
-            } else if (eventName === "tool_result") {
-              setMessages((m) =>
-                m.map((msg) => {
-                  if (msg.id !== assistantMsg.id) return msg;
-                  const calls = msg.toolCalls ?? [];
-                  // Mark the most recent matching call as ok/error.
-                  for (let i = calls.length - 1; i >= 0; i--) {
-                    if (calls[i].name === data.name && calls[i].ok === undefined) {
-                      const next = [...calls];
-                      next[i] = { ...next[i], ok: data.ok as boolean };
-                      return { ...msg, toolCalls: next };
-                    }
-                  }
-                  return msg;
-                }),
-              );
-            } else if (eventName === "error") {
-              setMessages((m) =>
-                m.map((msg) =>
-                  msg.id === assistantMsg.id
-                    ? { ...msg, text: msg.text + `\n\n_❌ ${data.message}_` }
-                    : msg,
-                ),
-              );
-            }
+            data = JSON.parse(dataStr) as Record<string, unknown>;
           } catch {
-            /* ignore parse errors */
+            continue;
+          }
+
+          if (eventName === "token") {
+            const t = (data.text as string) ?? "";
+            updateAssistant((m) => {
+              const last = m.blocks[m.blocks.length - 1];
+              if (last && last.kind === "text") last.text += t;
+              else m.blocks.push({ kind: "text", text: t });
+            });
+          } else if (eventName === "thinking") {
+            const t = (data.text as string) ?? "";
+            updateAssistant((m) => {
+              const last = m.blocks[m.blocks.length - 1];
+              if (last && last.kind === "thinking") last.text += t;
+              else m.blocks.push({ kind: "thinking", text: t });
+            });
+          } else if (eventName === "tool_use") {
+            updateAssistant((m) => {
+              m.blocks.push({
+                kind: "tool",
+                id: (data.id as string) ?? crypto.randomUUID(),
+                name: (data.name as string) ?? "?",
+                input: (data.input as Record<string, unknown>) ?? {},
+              });
+            });
+          } else if (eventName === "tool_result") {
+            const matchId = (data.tool_use_id as string) ?? (data.name as string) ?? "";
+            updateAssistant((m) => {
+              for (let i = m.blocks.length - 1; i >= 0; i--) {
+                const b = m.blocks[i];
+                if (b.kind === "tool" && b.id === matchId && b.ok === undefined) {
+                  m.blocks[i] = {
+                    ...b,
+                    ok: data.ok as boolean,
+                    result: (data.content as string) ?? "",
+                  };
+                  break;
+                }
+              }
+            });
+          } else if (eventName === "done") {
+            updateAssistant((m) => {
+              if (typeof data.cost_usd === "number") m.cost = data.cost_usd;
+              if (typeof data.duration_ms === "number") m.durationMs = data.duration_ms;
+            });
+          } else if (eventName === "error") {
+            updateAssistant((m) => {
+              m.blocks.push({ kind: "text", text: `\n\n_❌ ${data.message ?? "error"}_` });
+            });
           }
         }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setMessages((m) =>
-        m.map((message) =>
-          message.id === assistantMsg.id ? { ...message, text: `❌ ${msg}` } : message,
-        ),
-      );
+      updateAssistant((m) => {
+        m.blocks.push({ kind: "text", text: `\n\n❌ ${msg}` });
+      });
     } finally {
       setPending(false);
     }
@@ -163,31 +192,9 @@ export function ChatRail() {
               <Sparkles className="h-3 w-3" />
             </span>
             <span>Claude</span>
-            <div className="ml-auto flex items-center gap-0.5 rounded-md border border-border p-0.5 text-[10px]">
-              <button
-                type="button"
-                onClick={() => setMode("lite")}
-                title="Lite: Vercel-hosted, 5 hand-coded tools"
-                className={[
-                  "rounded px-1.5 py-0.5 font-medium uppercase tracking-wider transition-colors",
-                  mode === "lite" ? "bg-fg text-canvas" : "text-muted hover:bg-subtle",
-                ].join(" ")}
-              >
-                lite
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("full")}
-                title="Full: spawned Claude Code agent on the VM with shell + repo access"
-                className={[
-                  "flex items-center gap-1 rounded px-1.5 py-0.5 font-medium uppercase tracking-wider transition-colors",
-                  mode === "full" ? "bg-running text-white" : "text-muted hover:bg-subtle",
-                ].join(" ")}
-              >
-                <Zap className="h-2.5 w-2.5" />
-                full
-              </button>
-            </div>
+            <span className="rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium tracking-wider text-running">
+              opus 4.7
+            </span>
           </div>
         )}
         <button
@@ -205,64 +212,65 @@ export function ChatRail() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 text-[12.5px]">
             {messages.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border bg-subtle p-3 text-muted">
-                <p className="font-medium text-fg">Ask anything about your research.</p>
+                <p className="font-medium text-fg">Real Claude Code session.</p>
                 <p className="mt-1.5 leading-relaxed">
-                  I can search claims, fetch full bodies, and surface what is
-                  in-progress. Try:{" "}
-                  <em>&ldquo;Latest finding on EM and persona collapse?&rdquo;</em>
+                  Full toolkit: shell, file read/write, MCP servers, custom subagents,
+                  skills. Knows your CLAUDE.md and memory. Try{" "}
+                  <em>&ldquo;What is the latest finding on EM and persona collapse?&rdquo;</em>
                 </p>
               </div>
             ) : (
               <ul className="flex flex-col gap-3">
                 {messages.map((m) => (
                   <li key={m.id} className="flex flex-col gap-1">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                      {m.role === "user" ? "You" : "Claude"}
+                    <div className="flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-muted">
+                      <span>{m.role === "user" ? "You" : "Claude"}</span>
+                      {m.role === "assistant" && (m.cost != null || m.durationMs != null) && (
+                        <span className="font-mono normal-case tracking-normal">
+                          {m.durationMs != null && `${(m.durationMs / 1000).toFixed(1)}s`}
+                          {m.cost != null && m.durationMs != null && " · "}
+                          {m.cost != null && `$${m.cost.toFixed(2)}`}
+                        </span>
+                      )}
                     </div>
                     {m.role === "user" ? (
                       <div className="whitespace-pre-wrap rounded-md bg-subtle p-2.5 text-fg">
                         {m.text}
                       </div>
                     ) : (
-                      <div className="prose-tight text-fg">
-                        {m.toolCalls && m.toolCalls.length > 0 && (
-                          <div className="mb-2 flex flex-wrap gap-1">
-                            {m.toolCalls.map((tc, i) => (
-                              <span
-                                key={i}
-                                className={[
-                                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]",
-                                  tc.ok === undefined
-                                    ? "border-border bg-subtle text-muted"
-                                    : tc.ok
-                                      ? "border-confidence-high/30 bg-confidence-high/10 text-confidence-high"
-                                      : "border-red-300 bg-red-50 text-red-700",
-                                ].join(" ")}
-                              >
-                                <Wrench className="h-2.5 w-2.5" />
-                                {tc.name}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {m.text ? (
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              a: ({ href, children }) =>
-                                href && href.startsWith("/") ? (
-                                  <a href={href}>{children}</a>
-                                ) : (
-                                  <a href={href} target="_blank" rel="noopener noreferrer">
-                                    {children}
-                                  </a>
-                                ),
-                            }}
-                          >
-                            {m.text}
-                          </ReactMarkdown>
-                        ) : (
+                      <div className="flex flex-col gap-2">
+                        {m.blocks.length === 0 && (
                           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-muted" />
+                        )}
+                        {m.blocks.map((block, i) =>
+                          block.kind === "text" ? (
+                            <div key={i} className="prose-tight text-fg">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  a: ({ href, children }) =>
+                                    href && href.startsWith("/") ? (
+                                      <a href={href}>{children}</a>
+                                    ) : (
+                                      <a href={href} target="_blank" rel="noopener noreferrer">
+                                        {children}
+                                      </a>
+                                    ),
+                                }}
+                              >
+                                {block.text}
+                              </ReactMarkdown>
+                            </div>
+                          ) : block.kind === "thinking" ? (
+                            <div
+                              key={i}
+                              className="rounded-md border border-dashed border-border bg-subtle/60 p-2 text-[11px] italic text-muted"
+                            >
+                              {block.text}
+                            </div>
+                          ) : (
+                            <ToolCard key={i} block={block} />
+                          ),
                         )}
                       </div>
                     )}
@@ -272,10 +280,7 @@ export function ChatRail() {
             )}
           </div>
 
-          <form
-            className="flex items-end gap-2 border-t border-border p-3"
-            onSubmit={send}
-          >
+          <form className="flex items-end gap-2 border-t border-border p-3" onSubmit={send}>
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -303,4 +308,62 @@ export function ChatRail() {
       )}
     </aside>
   );
+}
+
+function ToolCard({ block }: { block: ToolBlock }) {
+  const [expanded, setExpanded] = useState(false);
+  const summary = formatToolInput(block.name, block.input);
+
+  const statusIcon =
+    block.ok === undefined ? (
+      <Wrench className="h-3 w-3 animate-pulse text-muted" />
+    ) : block.ok ? (
+      <Check className="h-3 w-3 text-confidence-high" />
+    ) : (
+      <XIcon className="h-3 w-3 text-red-600" />
+    );
+
+  return (
+    <div className="rounded-md border border-border bg-subtle/50">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-start gap-2 px-2 py-1.5 text-left"
+      >
+        <span className="mt-0.5 shrink-0">{statusIcon}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+              {block.name}
+            </span>
+          </div>
+          <div className="truncate font-mono text-[11px] text-fg">{summary}</div>
+        </div>
+        {block.result && (
+          <ChevronDown
+            className={`mt-1 h-3 w-3 shrink-0 text-muted transition-transform ${expanded ? "rotate-180" : ""}`}
+          />
+        )}
+      </button>
+      {expanded && block.result && (
+        <pre className="max-h-[40vh] overflow-auto whitespace-pre-wrap break-words border-t border-border bg-panel p-2 font-mono text-[11px] text-fg">
+          {block.result}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function formatToolInput(name: string, input: Record<string, unknown>): string {
+  if (name === "Bash") return String(input.command ?? "");
+  if (name === "Read") return String(input.file_path ?? "");
+  if (name === "Edit" || name === "Write") return String(input.file_path ?? "");
+  if (name === "Grep") return `${input.pattern ?? ""} ${input.path ? `· ${input.path}` : ""}`.trim();
+  if (name === "Glob") return String(input.pattern ?? "");
+  if (name === "WebFetch") return String(input.url ?? "");
+  if (name === "WebSearch") return String(input.query ?? "");
+  if (name === "Task") return String(input.description ?? input.subagent_type ?? "");
+  // Fallback: short JSON
+  const json = JSON.stringify(input);
+  return json.length > 120 ? json.slice(0, 120) + "…" : json;
 }

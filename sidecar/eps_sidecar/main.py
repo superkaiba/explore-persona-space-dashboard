@@ -240,12 +240,21 @@ def translate(evt: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         out = []
         for block in msg.get("content", []):
             if block.get("type") == "tool_result":
+                content = block.get("content", "")
+                if isinstance(content, list):
+                    content = "".join(c.get("text", "") for c in content if c.get("type") == "text")
+                content_str = str(content)
+                if len(content_str) > 8000:
+                    content_str = (
+                        content_str[:8000] + f"\n…[truncated, {len(content_str) - 8000} more chars]"
+                    )
                 out.append(
                     (
                         "tool_result",
                         {
-                            "name": block.get("tool_use_id", ""),
+                            "tool_use_id": block.get("tool_use_id", ""),
                             "ok": not block.get("is_error", False),
+                            "content": content_str,
                         },
                     )
                 )
