@@ -1,10 +1,16 @@
-"""FastAPI sidecar that spawns Claude Code agents and streams events via SSE.
+"""FastAPI sidecar that subprocesses the real `claude` CLI in headless mode.
 
-The Vercel /api/chat-full route is the only authorized caller; it forwards
-the user's message and a shared secret. We start a fresh Claude Code agent
-for each chat turn (or resume a session via session_id), give it filesystem
-+ shell access scoped to EPS_WORKDIR, and stream the agent's events back as
-Server-Sent Events.
+Why subprocess vs the Python claude-agent-sdk:
+  - The CLI auto-loads CLAUDE.md, settings.json, .mcp.json from the project,
+    plus ~/.claude memory, plugins, custom subagents, skills, and slash
+    commands. Identical to running `claude` in a terminal.
+  - The Python SDK is a thinner agent runtime that does NOT auto-load any
+    of the above; we'd have to reconstruct each piece by hand.
+  - We pipe `--output-format stream-json --include-partial-messages` and
+    translate to our SSE event shape (token / tool_use / tool_result /
+    done / error).
+
+Auth: Vercel proxy must include `Authorization: Bearer <SIDECAR_SHARED_SECRET>`.
 """
 
 from __future__ import annotations
@@ -17,7 +23,6 @@ import secrets
 from collections.abc import AsyncIterator
 from typing import Any
 
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,42 +34,23 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("eps-sidecar")
 
-
 # ── Config ────────────────────────────────────────────────────────────────
 SHARED_SECRET = os.environ.get("SIDECAR_SHARED_SECRET", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 WORKDIR = os.environ.get("EPS_WORKDIR", os.getcwd())
-MAX_TURNS = int(os.environ.get("SIDECAR_MAX_TURNS", "15"))
-MODEL = os.environ.get("SIDECAR_MODEL", "claude-sonnet-4-6")
 HOST = os.environ.get("SIDECAR_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SIDECAR_PORT", "7654"))
+CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/thomasjiralerspong/.local/bin/claude")
+PERMISSION_MODE = os.environ.get("CLAUDE_PERMISSION_MODE", "bypassPermissions")
+MAX_BUDGET_USD = os.environ.get("SIDECAR_MAX_BUDGET_USD", "1.00")  # per request
+SUBPROC_TIMEOUT_S = int(os.environ.get("SIDECAR_TIMEOUT_S", "300"))
 
 if not SHARED_SECRET:
     log.warning("SIDECAR_SHARED_SECRET not set — refusing all requests")
 if not ANTHROPIC_API_KEY:
-    log.warning("ANTHROPIC_API_KEY not set — agent will fail")
-
-
-SYSTEM_PROMPT = f"""You are the research assistant for the EPS Dashboard.
-You're running on the user's VM with full filesystem and shell access scoped
-to {WORKDIR}. The user is the project owner — an AI alignment researcher
-working on persona representations and emergent misalignment in LLMs.
-
-You can:
-- Read any file in the working directory (the research repo)
-- Run shell commands (gh, git, python scripts, sqlite3, etc.)
-- Query the dashboard's Supabase Postgres via the DATABASE_URL env var
-- Read WandB results via the WANDB_API_KEY env var
-- Browse GitHub via gh CLI
-
-Defaults:
-- Be concise. Technical fluency assumed.
-- When citing claims, prefer GitHub issue numbers ("#237") and dashboard
-  detail links ("/claim/<id>").
-- Only run experiments via /issue N — never inline.
-- Never modify files without explicit user approval.
-- If asked to plan a new experiment, suggest creating a status:proposed
-  GitHub issue, don't actually create one without confirmation."""
+    log.warning("ANTHROPIC_API_KEY not set — claude will fail to authenticate")
+if not os.path.isfile(CLAUDE_BIN) or not os.access(CLAUDE_BIN, os.X_OK):
+    log.warning("CLAUDE_BIN at %s not executable", CLAUDE_BIN)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────
@@ -96,8 +82,9 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "workdir": WORKDIR,
-        "model": MODEL,
-        "max_turns": MAX_TURNS,
+        "claude_bin": CLAUDE_BIN,
+        "permission_mode": PERMISSION_MODE,
+        "max_budget_usd": MAX_BUDGET_USD,
         "has_secret": bool(SHARED_SECRET),
         "has_anthropic_key": bool(ANTHROPIC_API_KEY),
     }
@@ -110,87 +97,163 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
-    session_id: str | None = None
 
 
 @app.post("/chat", dependencies=[Depends(require_secret)])
 async def chat(req: ChatRequest) -> EventSourceResponse:
-    """Stream agent events as SSE.
-
-    Event types we emit (matches the lite chat in /api/chat):
-      - token:        {text: "..."}     -- assistant text delta
-      - tool_use:     {name, input}     -- tool call announce
-      - tool_result:  {name, ok}        -- tool finished
-      - error:        {message}
-      - done:         {stop_reason}
-    """
+    """Spawn `claude --print` and translate stream-json → our SSE events."""
     last_user = next((m for m in reversed(req.messages) if m.role == "user"), None)
     if last_user is None:
         raise HTTPException(400, "no user message")
     prompt = last_user.content
 
-    options = ClaudeAgentOptions(
-        cwd=WORKDIR,
-        model=MODEL,
-        max_turns=MAX_TURNS,
-        system_prompt=SYSTEM_PROMPT,
-        permission_mode="bypassPermissions",  # trusted environment, owner-only via shared secret
-    )
+    args = [
+        CLAUDE_BIN,
+        "--print",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--permission-mode",
+        PERMISSION_MODE,
+        "--no-session-persistence",
+        "--max-budget-usd",
+        MAX_BUDGET_USD,
+        prompt,
+    ]
+    env = {**os.environ, "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY}
 
     async def event_stream() -> AsyncIterator[dict[str, str]]:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=WORKDIR,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
         try:
-            async with ClaudeSDKClient(options=options) as client:
-                await client.query(prompt)
-                async for msg in client.receive_messages():
-                    payload = _serialize(msg)
-                    if payload is None:
+            assert proc.stdout is not None
+            async with asyncio.timeout(SUBPROC_TIMEOUT_S):
+                async for raw in proc.stdout:
+                    line = raw.decode("utf-8", errors="replace").strip()
+                    if not line:
                         continue
-                    event_name, data = payload
-                    yield {"event": event_name, "data": json.dumps(data)}
-                    if event_name == "done":
-                        return
+                    try:
+                        evt = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    for sse in translate(evt):
+                        yield {"event": sse[0], "data": json.dumps(sse[1])}
+                code = await proc.wait()
+                if code != 0:
+                    err = (
+                        (await proc.stderr.read()).decode("utf-8", errors="replace")
+                        if proc.stderr
+                        else ""
+                    )
+                    yield {
+                        "event": "error",
+                        "data": json.dumps({"message": f"claude exited {code}: {err[:500]}"}),
+                    }
+                    yield {"event": "done", "data": json.dumps({"stop_reason": "error"})}
+        except TimeoutError:
+            proc.terminate()
+            yield {
+                "event": "error",
+                "data": json.dumps({"message": f"timeout after {SUBPROC_TIMEOUT_S}s"}),
+            }
+            yield {"event": "done", "data": json.dumps({"stop_reason": "timeout"})}
         except asyncio.CancelledError:
-            log.info("client disconnected")
+            log.info("client disconnected; killing claude subprocess")
+            proc.terminate()
             raise
         except Exception as e:
-            log.exception("agent error")
+            log.exception("event_stream error")
             yield {"event": "error", "data": json.dumps({"message": str(e)})}
             yield {"event": "done", "data": json.dumps({"stop_reason": "error"})}
 
     return EventSourceResponse(event_stream())
 
 
-def _serialize(msg: Any) -> tuple[str, dict[str, Any]] | None:
-    """Map Claude Agent SDK messages to our SSE event names."""
-    cls = msg.__class__.__name__
-    if cls == "AssistantMessage":
-        for block in getattr(msg, "content", []):
-            block_cls = block.__class__.__name__
-            if block_cls == "TextBlock":
-                return ("token", {"text": getattr(block, "text", "")})
-            if block_cls == "ToolUseBlock":
-                return (
-                    "tool_use",
-                    {
-                        "name": getattr(block, "name", "?"),
-                        "input": getattr(block, "input", {}),
-                    },
+def translate(evt: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Map a claude-code stream-json event to zero+ of our SSE events.
+
+    Our event names mirror the lite chat:
+      - token        {text}              partial assistant text
+      - tool_use     {name, input}       tool call announce
+      - tool_result  {name, ok}          tool finished
+      - thinking     {text}              extended-thinking deltas (optional)
+      - done         {stop_reason}       final
+      - error        {message}
+    """
+    t = evt.get("type")
+    if t == "system":
+        # Skip startup hooks / init noise; surface only failures.
+        if evt.get("subtype") == "hook_response" and evt.get("exit_code", 0) != 0:
+            return [("error", {"message": f"hook failed: {evt.get('hook_name')}"})]
+        return []
+
+    if t == "stream_event":
+        # Partial deltas streamed as Anthropic SSE events embedded in JSON.
+        inner = evt.get("event", {})
+        if inner.get("type") == "content_block_delta":
+            delta = inner.get("delta", {})
+            d_type = delta.get("type")
+            if d_type == "text_delta":
+                return [("token", {"text": delta.get("text", "")})]
+            if d_type == "thinking_delta":
+                return [("thinking", {"text": delta.get("thinking", "")})]
+        return []
+
+    if t == "assistant":
+        # Whole message — usually arrives alongside stream_event deltas; we
+        # only forward tool_use blocks here (text already came as deltas).
+        msg = evt.get("message", {})
+        out: list[tuple[str, dict[str, Any]]] = []
+        for block in msg.get("content", []):
+            if block.get("type") == "tool_use":
+                out.append(
+                    (
+                        "tool_use",
+                        {
+                            "name": block.get("name", "?"),
+                            "input": block.get("input", {}),
+                            "id": block.get("id"),
+                        },
+                    )
                 )
-        return None
-    if cls == "UserMessage":
-        for block in getattr(msg, "content", []):
-            if block.__class__.__name__ == "ToolResultBlock":
-                return (
-                    "tool_result",
-                    {
-                        "name": getattr(block, "tool_use_id", ""),
-                        "ok": not getattr(block, "is_error", False),
-                    },
+        return out
+
+    if t == "user":
+        msg = evt.get("message", {})
+        out = []
+        for block in msg.get("content", []):
+            if block.get("type") == "tool_result":
+                out.append(
+                    (
+                        "tool_result",
+                        {
+                            "name": block.get("tool_use_id", ""),
+                            "ok": not block.get("is_error", False),
+                        },
+                    )
                 )
-        return None
-    if cls == "ResultMessage":
-        return ("done", {"stop_reason": getattr(msg, "subtype", "end_turn")})
-    return None
+        return out
+
+    if t == "result":
+        return [
+            (
+                "done",
+                {
+                    "stop_reason": evt.get("subtype", "end_turn"),
+                    "cost_usd": evt.get("total_cost_usd"),
+                    "duration_ms": evt.get("duration_ms"),
+                    "num_turns": evt.get("num_turns"),
+                },
+            )
+        ]
+
+    return []
 
 
 def main() -> None:

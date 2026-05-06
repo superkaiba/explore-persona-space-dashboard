@@ -1,21 +1,32 @@
 # EPS Sidecar
 
-Spawns a Claude Code agent on the VM and streams its events to the Vercel
-chat rail over Cloudflare Tunnel (or any HTTPS reverse proxy).
+Subprocesses the real `claude` CLI in headless mode (`claude --print
+--output-format stream-json`) and streams its events to the Vercel chat
+rail over Cloudflare Tunnel.
 
-The lite chat at `/api/chat` will keep working — this sidecar adds a
-heavyweight mode the dashboard can route to via `/api/chat-full` once
-`NEXT_PUBLIC_SIDECAR_URL` is set.
+This means the chat agent is byte-identical to running `claude` in a
+terminal on the VM — same CLAUDE.md, same custom subagents, same skills,
+same MCP servers, same memory, same plugins, same model (Opus 4.7 1M),
+same default tools.
+
+The lite chat at `/api/chat` keeps working — this sidecar adds the
+heavyweight mode the dashboard routes to via `/api/chat-full` when the
+user toggles `FULL` in the rail header.
 
 ## What it does differently from the lite chat
 
 | | `/api/chat` (Vercel) | `/api/chat-full` (sidecar) |
 |---|---|---|
-| Tools | 5 hand-coded Drizzle queries | full Claude Code tool set: file read/write, shell, grep, Read, Edit, Glob, etc. |
-| Working dir | none | `EPS_WORKDIR` (defaults to `/home/.../explore-persona-space`) |
-| Cost | ~$0.01 per message | unbounded by default; `SIDECAR_MAX_TURNS` caps it |
-| Shell access | no | yes |
-| Repo access | through Supabase only | the actual cloned repo |
+| Agent | Anthropic SDK + 5 hand-coded tools | Real `claude` CLI process |
+| Model | claude-sonnet-4-6 | claude-opus-4-7 1M |
+| Tools | list_claims / get_claim / etc. | every tool in your terminal Claude session (Bash, Read, Edit, Grep, MCP, plugins, ...) |
+| Project context | none | CLAUDE.md, settings.json, .mcp.json auto-loaded |
+| Custom subagents | none | all of `.claude/agents/` |
+| Custom skills / slash commands | none | all of `.claude/skills/` (and via `Skill` tool) |
+| Memory | none | `~/.claude/projects/.../memory/` auto-loaded |
+| Working dir | n/a | `EPS_WORKDIR` (research repo) |
+| Cost per query | ~$0.01 | $0.10–$1.00 (Opus + first-message cache miss); subsequent queries cache for ~10 min |
+| Per-request budget | n/a | `SIDECAR_MAX_BUDGET_USD` (default $1.00); `SIDECAR_TIMEOUT_S` (default 300s) |
 
 ## Setup on the VM
 
