@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, eq, inArray, or } from "drizzle-orm";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { and, eq, inArray } from "drizzle-orm";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { getDb } from "@/db/client";
 import { claims, edges, experiments, figures, todos } from "@/db/schema";
+import { createClient } from "@/lib/supabase/server";
+import { EditableTitle } from "@/components/editor/EditableTitle";
+import { EditableBody } from "@/components/editor/EditableBody";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,12 @@ export default async function ClaimPage({
   const db = getDb();
   const [claim] = await db.select().from(claims).where(eq(claims.id, id)).limit(1);
   if (!claim) notFound();
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const canEdit = !!user;
 
   // Hero figure
   let hero: { url: string; caption: string | null } | null = null;
@@ -154,9 +161,7 @@ export default async function ClaimPage({
             )}
           </div>
 
-          <h1 className="mt-3 text-[22px] font-semibold leading-tight tracking-tight">
-            {claim.title}
-          </h1>
+          <EditableTitle claimId={claim.id} initialTitle={claim.title} canEdit={canEdit} />
 
           {hero && (
             <figure className="mt-6 overflow-hidden rounded-lg border border-border bg-panel">
@@ -170,26 +175,7 @@ export default async function ClaimPage({
             </figure>
           )}
 
-          <div className="prose-tight mt-8 text-[13.5px]">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ href, children }) => (
-                  <a href={href} target="_blank" rel="noopener noreferrer">
-                    {children}
-                  </a>
-                ),
-                table: ({ children }) => (
-                  <div className="overflow-x-auto"><table>{children}</table></div>
-                ),
-                // eslint-disable-next-line @next/next/no-img-element
-                img: ({ src, alt }) =>
-                  src ? <img src={typeof src === "string" ? src : ""} alt={alt ?? ""} loading="lazy" /> : null,
-              }}
-            >
-              {markdown || "_(no body)_"}
-            </ReactMarkdown>
-          </div>
+          <EditableBody claimId={claim.id} initialBody={markdown} canEdit={canEdit} />
         </div>
 
         <aside className="space-y-6 text-[12.5px]">

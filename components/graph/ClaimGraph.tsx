@@ -72,8 +72,10 @@ const KIND_LABEL: Record<EntityKind, string> = {
 export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProps) {
   const router = useRouter();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [enabledKinds, setEnabledKinds] = useState<Set<EntityKind>>(new Set(ALL_KINDS));
   const [confidenceFilter, setConfidenceFilter] = useState<"ALL" | "HIGH" | "MODERATE" | "LOW">("ALL");
+  const [search, setSearch] = useState("");
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -84,10 +86,12 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
   }, [entities]);
 
   const { nodes, edges } = useMemo(() => {
+    const q = search.trim().toLowerCase();
     const visible = entities.filter((e) => {
       if (!enabledKinds.has(e.kind)) return false;
       if (e.kind === "claim" && confidenceFilter !== "ALL" && e.confidence !== confidenceFilter)
         return false;
+      if (q && !e.title.toLowerCase().includes(q)) return false;
       return true;
     });
     const visibleIds = new Set(visible.map((c) => c.id));
@@ -111,7 +115,7 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
         id: `${e.fromId}->${e.toId}-${e.type}`,
         source: e.fromId,
         target: e.toId,
-        type: "smoothstep",
+        type: "default", // bezier
         animated: false,
         style: { stroke: "rgb(180 180 188)", strokeWidth: 1.5 },
         markerEnd: {
@@ -126,7 +130,7 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
       nodes: dagreLayout(initialNodes, initialEdges, "TB"),
       edges: initialEdges,
     };
-  }, [entities, rawEdges, enabledKinds, confidenceFilter]);
+  }, [entities, rawEdges, enabledKinds, confidenceFilter, search]);
 
   const cancelClose = useCallback(() => {
     if (closeTimerRef.current) {
@@ -142,17 +146,19 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
   }, []);
   const scheduleOpen = useCallback(
     (id: string) => {
+      if (pinnedId) return; // don't change preview while pinned
       cancelOpen();
       cancelClose();
       openTimerRef.current = setTimeout(() => setHoveredId(id), HOVER_OPEN_DELAY);
     },
-    [cancelOpen, cancelClose],
+    [cancelOpen, cancelClose, pinnedId],
   );
   const scheduleClose = useCallback(() => {
+    if (pinnedId) return; // don't auto-close when pinned
     cancelOpen();
     cancelClose();
     closeTimerRef.current = setTimeout(() => setHoveredId(null), HOVER_CLOSE_DELAY);
-  }, [cancelOpen, cancelClose]);
+  }, [cancelOpen, cancelClose, pinnedId]);
 
   const onNodeMouseEnter: NodeMouseHandler<EntityNodeType> = useCallback(
     (_e, node) => scheduleOpen(node.id),
@@ -162,19 +168,33 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
     () => scheduleClose(),
     [scheduleClose],
   );
+
+  // Click toggles pin. Shift-click navigates to detail page (claims only).
   const onNodeClick: NodeMouseHandler<EntityNodeType> = useCallback(
-    (_e, node) => {
+    (e, node) => {
       const ent = entityById.get(node.id);
       if (!ent) return;
-      if (ent.kind === "claim") router.push(`/claim/${node.id}`);
-      else if (ent.githubIssueNumber != null)
-        window.open(
-          `https://github.com/superkaiba/explore-persona-space/issues/${ent.githubIssueNumber}`,
-          "_blank",
-        );
+      if (e.shiftKey || (e as unknown as MouseEvent).metaKey || (e as unknown as MouseEvent).ctrlKey) {
+        if (ent.kind === "claim") router.push(`/claim/${node.id}`);
+        else if (ent.githubIssueNumber != null) {
+          window.open(
+            `https://github.com/superkaiba/explore-persona-space/issues/${ent.githubIssueNumber}`,
+            "_blank",
+          );
+        }
+        return;
+      }
+      // Toggle pin
+      setPinnedId((prev) => (prev === node.id ? null : node.id));
+      setHoveredId(node.id);
     },
     [entityById, router],
   );
+
+  const closePreview = useCallback(() => {
+    setPinnedId(null);
+    setHoveredId(null);
+  }, []);
 
   const toggleKind = (k: EntityKind) =>
     setEnabledKinds((prev) => {
@@ -190,7 +210,8 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
     return c;
   }, [entities]);
 
-  const hovered = hoveredId ? entityById.get(hoveredId) ?? null : null;
+  const previewedId = pinnedId ?? hoveredId;
+  const previewed = previewedId ? entityById.get(previewedId) ?? null : null;
 
   return (
     <div className="relative h-full w-full">
@@ -201,6 +222,7 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
         onNodeClick={onNodeClick}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeMouseLeave={onNodeMouseLeave}
+        onPaneClick={closePreview}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable
@@ -209,7 +231,6 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
         proOptions={{ hideAttribution: true }}
         minZoom={0.15}
         maxZoom={1.6}
-        defaultEdgeOptions={{ type: "smoothstep" }}
       >
         <Background gap={24} size={1} color="rgb(220 220 226)" />
         <Controls showInteractive={false} />
@@ -217,7 +238,7 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
       </ReactFlow>
 
       {/* Filter rail */}
-      <div className="panel absolute left-3 top-3 z-10 flex items-center gap-1 rounded-lg p-1 text-[11px] shadow-card">
+      <div className="panel absolute left-3 top-3 z-10 flex flex-wrap items-center gap-1 rounded-lg p-1 text-[11px] shadow-card">
         {ALL_KINDS.map((k) => {
           const on = enabledKinds.has(k);
           const dotColor = KIND_COLORS[k];
@@ -256,17 +277,29 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
             {c}
           </button>
         ))}
+        <div className="mx-1 h-4 w-px bg-border" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search titles…"
+          className="w-[180px] rounded-md border border-transparent bg-subtle px-2 py-1 text-[11px] text-fg placeholder:text-muted focus:border-running focus:outline-none focus:ring-0"
+        />
         <span className="ml-1 font-mono text-[10px] text-muted">
           {nodes.length} · {edges.length} edges
         </span>
       </div>
 
-      {hovered && (
+      {previewed && (
         <EntityHoverPanel
-          entity={hovered}
+          entity={previewed}
+          pinned={pinnedId === previewed.id}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
-          onClose={() => setHoveredId(null)}
+          onClose={closePreview}
+          onTogglePin={() =>
+            setPinnedId((prev) => (prev === previewed.id ? null : previewed.id))
+          }
         />
       )}
     </div>

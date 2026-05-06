@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Pin, PinOff, X } from "lucide-react";
 import type { EntityKind } from "./EntityNode";
 
 export type HoverEntity = {
@@ -18,9 +19,11 @@ export type HoverEntity = {
 
 type Props = {
   entity: HoverEntity;
+  pinned: boolean;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
   onClose: () => void;
+  onTogglePin: () => void;
 };
 
 const KIND_LABEL: Record<EntityKind, string> = {
@@ -45,9 +48,11 @@ const CONF_BG: Record<NonNullable<HoverEntity["confidence"]>, string> = {
 
 export default function EntityHoverPanel({
   entity,
+  pinned,
   onMouseEnter,
   onMouseLeave,
   onClose,
+  onTogglePin,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -67,7 +72,10 @@ export default function EntityHoverPanel({
       ref={ref}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className="panel pointer-events-auto absolute right-4 top-4 z-20 flex max-h-[calc(100vh-2rem)] w-[480px] flex-col overflow-hidden rounded-xl shadow-rail"
+      className={[
+        "panel pointer-events-auto absolute right-4 top-4 z-20 flex max-h-[calc(100vh-2rem)] w-[480px] flex-col overflow-hidden rounded-xl shadow-rail transition-shadow",
+        pinned ? "ring-2 ring-running/30" : "",
+      ].join(" ")}
     >
       <header className="flex items-start gap-3 border-b border-border bg-subtle p-3">
         <div className="flex flex-col items-center gap-1">
@@ -84,6 +92,11 @@ export default function EntityHoverPanel({
             {entity.kind === "experiment" && entity.status && (
               <span className="rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-running">
                 {entity.status.replace(/_/g, " ")}
+              </span>
+            )}
+            {pinned && (
+              <span className="rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-running">
+                pinned
               </span>
             )}
           </div>
@@ -106,14 +119,30 @@ export default function EntityHoverPanel({
             )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close preview"
-          className="rounded-md p-1 text-muted transition-colors hover:bg-border hover:text-fg"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onTogglePin}
+            aria-label={pinned ? "Unpin preview" : "Pin preview"}
+            title={pinned ? "Unpin (click again to dismiss with the X)" : "Click to pin"}
+            className={[
+              "rounded-md p-1 transition-colors",
+              pinned
+                ? "bg-running/10 text-running hover:bg-running/20"
+                : "text-muted hover:bg-border hover:text-fg",
+            ].join(" ")}
+          >
+            {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close preview"
+            className="rounded-md p-1 text-muted transition-colors hover:bg-border hover:text-fg"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </header>
 
       <div className="prose-tight flex-1 overflow-y-auto p-4 text-[12.5px]">

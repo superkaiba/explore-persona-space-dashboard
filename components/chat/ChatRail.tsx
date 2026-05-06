@@ -150,7 +150,7 @@ export function ChatRail() {
   return (
     <aside
       className="flex h-full flex-col border-l border-border bg-panel transition-[width] duration-200"
-      style={{ width: open ? 380 : 44 }}
+      style={{ width: open ? 440 : 44 }}
     >
       <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
         {open && (
