@@ -28,4 +28,4 @@ pnpm-debug.log*
 next-env.d.ts
 
 # drizzle generated migrations are committed; metadata is not
-db/migrations/meta/
+

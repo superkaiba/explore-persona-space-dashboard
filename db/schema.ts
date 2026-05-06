@@ -111,6 +111,7 @@ export const todos = pgTable("todo", {
   text: text("text").notNull(),
   due: timestamp("due", { withTimezone: true }),
   status: todoStatusEnum("status").notNull().default("open"),
+  kind: text("kind").notNull().default("proposed"),
   linkedKind: entityKindEnum("linked_kind"),
   linkedId: uuid("linked_id"),
   githubIssueNumber: integer("github_issue_number").unique(),

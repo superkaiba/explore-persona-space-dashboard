@@ -1,0 +1,145 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { EntityKind } from "./EntityNode";
+
+export type HoverEntity = {
+  id: string;
+  kind: EntityKind;
+  title: string;
+  confidence: "HIGH" | "MODERATE" | "LOW" | null;
+  status: string | null;
+  githubIssueNumber: number | null;
+  body: string;
+};
+
+type Props = {
+  entity: HoverEntity;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+  onClose: () => void;
+};
+
+const KIND_LABEL: Record<EntityKind, string> = {
+  claim: "Claim",
+  experiment: "In progress",
+  proposed: "Proposed",
+  untriaged: "Untriaged",
+};
+
+const KIND_DOT: Record<EntityKind, string> = {
+  claim: "bg-confidence-low",
+  experiment: "bg-running",
+  proposed: "bg-proposed",
+  untriaged: "bg-untriaged",
+};
+
+const CONF_BG: Record<NonNullable<HoverEntity["confidence"]>, string> = {
+  HIGH: "bg-confidence-high text-white",
+  MODERATE: "bg-confidence-moderate text-black",
+  LOW: "bg-confidence-low text-white",
+};
+
+export default function EntityHoverPanel({
+  entity,
+  onMouseEnter,
+  onMouseLeave,
+  onClose,
+}: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = 0;
+  }, [entity.id]);
+
+  const dotClass =
+    entity.kind === "claim" && entity.confidence === "HIGH"
+      ? "bg-confidence-high"
+      : entity.kind === "claim" && entity.confidence === "MODERATE"
+        ? "bg-confidence-moderate"
+        : KIND_DOT[entity.kind];
+
+  return (
+    <div
+      ref={ref}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className="panel pointer-events-auto absolute right-4 top-4 z-20 flex max-h-[calc(100vh-2rem)] w-[480px] flex-col overflow-hidden rounded-xl shadow-rail"
+    >
+      <header className="flex items-start gap-3 border-b border-border bg-subtle p-3">
+        <div className="flex flex-col items-center gap-1">
+          <span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
+            <span>{KIND_LABEL[entity.kind]}</span>
+            {entity.kind === "claim" && entity.confidence && (
+              <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${CONF_BG[entity.confidence]}`}>
+                {entity.confidence}
+              </span>
+            )}
+            {entity.kind === "experiment" && entity.status && (
+              <span className="rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-running">
+                {entity.status.replace(/_/g, " ")}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-[14px] font-semibold leading-snug">{entity.title}</div>
+          <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted">
+            {entity.githubIssueNumber != null && (
+              <a
+                href={`https://github.com/superkaiba/explore-persona-space/issues/${entity.githubIssueNumber}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono hover:text-fg"
+              >
+                #{entity.githubIssueNumber} ↗
+              </a>
+            )}
+            {entity.kind === "claim" && (
+              <Link href={`/claim/${entity.id}`} className="hover:text-fg">
+                open detail page →
+              </Link>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close preview"
+          className="rounded-md p-1 text-muted transition-colors hover:bg-border hover:text-fg"
+        >
+          ✕
+        </button>
+      </header>
+
+      <div className="prose-tight flex-1 overflow-y-auto p-4 text-[12.5px]">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            // eslint-disable-next-line @next/next/no-img-element
+            img: ({ src, alt }) =>
+              src ? (
+                <img src={typeof src === "string" ? src : ""} alt={alt ?? ""} loading="lazy" />
+              ) : null,
+            a: ({ href, children }) => (
+              <a href={href} target="_blank" rel="noopener noreferrer">
+                {children}
+              </a>
+            ),
+            table: ({ children }) => (
+              <div className="overflow-x-auto">
+                <table>{children}</table>
+              </div>
+            ),
+          }}
+        >
+          {entity.body || "_(no body)_"}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}

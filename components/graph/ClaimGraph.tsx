@@ -7,63 +7,100 @@ import {
   Background,
   Controls,
   MiniMap,
+  MarkerType,
   type Edge,
   type NodeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import ClaimNode, { type ClaimNodeType, type ClaimNodeData } from "./ClaimNode";
+import EntityNode, { type EntityNodeType, type EntityKind } from "./EntityNode";
 import { dagreLayout } from "./dagreLayout";
-import ClaimHoverPanel, { type HoverClaim } from "./ClaimHoverPanel";
+import EntityHoverPanel, { type HoverEntity } from "./EntityHoverPanel";
+
+export type GraphEntity = {
+  id: string;
+  kind: EntityKind;
+  title: string;
+  confidence: "HIGH" | "MODERATE" | "LOW" | null;
+  status: string | null;
+  githubIssueNumber: number | null;
+  body: string;
+};
+
+export type GraphEdge = {
+  fromKind: string;
+  fromId: string;
+  toKind: string;
+  toId: string;
+  type: string;
+};
 
 export type ClaimGraphProps = {
-  claims: {
-    id: string;
-    title: string;
-    confidence: ClaimNodeData["confidence"];
-    githubIssueNumber: number | null;
-    body: string;
-  }[];
-  edges: { fromId: string; toId: string; type: string }[];
+  entities: GraphEntity[];
+  edges: GraphEdge[];
 };
 
-const nodeTypes = { claim: ClaimNode };
+const nodeTypes = { entity: EntityNode };
 
-const minimapColor = (n: ClaimNodeType) => {
-  const c = n.data.confidence;
-  if (c === "HIGH") return "#16a34a";
-  if (c === "MODERATE") return "#eab308";
-  if (c === "LOW") return "#9ca3af";
-  return "#d4d4d4";
+const KIND_COLORS: Record<EntityKind, string> = {
+  claim: "#9ca3af",
+  experiment: "#3b82f6",
+  proposed: "#8b5cf6",
+  untriaged: "#94a3b8",
 };
 
-const HOVER_OPEN_DELAY = 250;
+const minimapColor = (n: EntityNodeType) => {
+  if (n.data.kind === "claim" && n.data.confidence) {
+    if (n.data.confidence === "HIGH") return "#16a34a";
+    if (n.data.confidence === "MODERATE") return "#eab308";
+    if (n.data.confidence === "LOW") return "#9ca3af";
+  }
+  return KIND_COLORS[n.data.kind];
+};
+
+const HOVER_OPEN_DELAY = 200;
 const HOVER_CLOSE_DELAY = 200;
 
-export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps) {
+const ALL_KINDS: EntityKind[] = ["claim", "experiment", "proposed", "untriaged"];
+const KIND_LABEL: Record<EntityKind, string> = {
+  claim: "Claims",
+  experiment: "In progress",
+  proposed: "Proposed",
+  untriaged: "Untriaged",
+};
+
+export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProps) {
   const router = useRouter();
-  const [filter, setFilter] = useState<"ALL" | "HIGH" | "MODERATE" | "LOW">("ALL");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [enabledKinds, setEnabledKinds] = useState<Set<EntityKind>>(new Set(ALL_KINDS));
+  const [confidenceFilter, setConfidenceFilter] = useState<"ALL" | "HIGH" | "MODERATE" | "LOW">("ALL");
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const claimsById = useMemo(() => {
-    const m = new Map<string, HoverClaim>();
-    for (const c of claims) m.set(c.id, c);
+  const entityById = useMemo(() => {
+    const m = new Map<string, HoverEntity>();
+    for (const e of entities) m.set(e.id, e);
     return m;
-  }, [claims]);
+  }, [entities]);
 
   const { nodes, edges } = useMemo(() => {
-    const visible = filter === "ALL" ? claims : claims.filter((c) => c.confidence === filter);
+    const visible = entities.filter((e) => {
+      if (!enabledKinds.has(e.kind)) return false;
+      if (e.kind === "claim" && confidenceFilter !== "ALL" && e.confidence !== confidenceFilter)
+        return false;
+      return true;
+    });
     const visibleIds = new Set(visible.map((c) => c.id));
 
-    const initialNodes: ClaimNodeType[] = visible.map((c) => ({
+    const initialNodes: EntityNodeType[] = visible.map((c) => ({
       id: c.id,
-      type: "claim",
+      type: "entity",
       position: { x: 0, y: 0 },
       data: {
+        kind: c.kind,
         title: c.title,
         confidence: c.confidence,
+        status: c.status,
         githubIssueNumber: c.githubIssueNumber,
       },
     }));
@@ -76,14 +113,20 @@ export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps)
         target: e.toId,
         type: "smoothstep",
         animated: false,
-        style: { stroke: "#9ca3af", strokeWidth: 1.5 },
+        style: { stroke: "rgb(180 180 188)", strokeWidth: 1.5 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: "rgb(180 180 188)",
+          width: 18,
+          height: 18,
+        },
       }));
 
     return {
       nodes: dagreLayout(initialNodes, initialEdges, "TB"),
       edges: initialEdges,
     };
-  }, [claims, rawEdges, filter]);
+  }, [entities, rawEdges, enabledKinds, confidenceFilter]);
 
   const cancelClose = useCallback(() => {
     if (closeTimerRef.current) {
@@ -91,14 +134,12 @@ export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps)
       closeTimerRef.current = null;
     }
   }, []);
-
   const cancelOpen = useCallback(() => {
     if (openTimerRef.current) {
       clearTimeout(openTimerRef.current);
       openTimerRef.current = null;
     }
   }, []);
-
   const scheduleOpen = useCallback(
     (id: string) => {
       cancelOpen();
@@ -107,29 +148,49 @@ export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps)
     },
     [cancelOpen, cancelClose],
   );
-
   const scheduleClose = useCallback(() => {
     cancelOpen();
     cancelClose();
     closeTimerRef.current = setTimeout(() => setHoveredId(null), HOVER_CLOSE_DELAY);
   }, [cancelOpen, cancelClose]);
 
-  const onNodeMouseEnter: NodeMouseHandler<ClaimNodeType> = useCallback(
+  const onNodeMouseEnter: NodeMouseHandler<EntityNodeType> = useCallback(
     (_e, node) => scheduleOpen(node.id),
     [scheduleOpen],
   );
-
-  const onNodeMouseLeave: NodeMouseHandler<ClaimNodeType> = useCallback(
+  const onNodeMouseLeave: NodeMouseHandler<EntityNodeType> = useCallback(
     () => scheduleClose(),
     [scheduleClose],
   );
-
-  const onNodeClick: NodeMouseHandler<ClaimNodeType> = useCallback(
-    (_e, node) => router.push(`/claim/${node.id}`),
-    [router],
+  const onNodeClick: NodeMouseHandler<EntityNodeType> = useCallback(
+    (_e, node) => {
+      const ent = entityById.get(node.id);
+      if (!ent) return;
+      if (ent.kind === "claim") router.push(`/claim/${node.id}`);
+      else if (ent.githubIssueNumber != null)
+        window.open(
+          `https://github.com/superkaiba/explore-persona-space/issues/${ent.githubIssueNumber}`,
+          "_blank",
+        );
+    },
+    [entityById, router],
   );
 
-  const hovered = hoveredId ? claimsById.get(hoveredId) ?? null : null;
+  const toggleKind = (k: EntityKind) =>
+    setEnabledKinds((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+
+  const counts = useMemo(() => {
+    const c: Record<EntityKind, number> = { claim: 0, experiment: 0, proposed: 0, untriaged: 0 };
+    for (const e of entities) c[e.kind]++;
+    return c;
+  }, [entities]);
+
+  const hovered = hoveredId ? entityById.get(hoveredId) ?? null : null;
 
   return (
     <div className="relative h-full w-full">
@@ -144,43 +205,66 @@ export default function ClaimGraph({ claims, edges: rawEdges }: ClaimGraphProps)
         nodesConnectable={false}
         elementsSelectable
         fitView
-        fitViewOptions={{ padding: 0.15 }}
+        fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
-        minZoom={0.2}
+        minZoom={0.15}
         maxZoom={1.6}
+        defaultEdgeOptions={{ type: "smoothstep" }}
       >
-        <Background gap={16} color="#d4d4d4" />
+        <Background gap={24} size={1} color="rgb(220 220 226)" />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeColor={minimapColor} className="!bg-neutral-100" />
+        <MiniMap pannable zoomable nodeColor={minimapColor} maskColor="rgb(0 0 0 / 0.05)" />
       </ReactFlow>
 
-      <div className="panel absolute left-3 top-3 z-10 flex items-center gap-1 rounded-md p-1 text-xs">
-        {(["ALL", "HIGH", "MODERATE", "LOW"] as const).map((f) => (
+      {/* Filter rail */}
+      <div className="panel absolute left-3 top-3 z-10 flex items-center gap-1 rounded-lg p-1 text-[11px] shadow-card">
+        {ALL_KINDS.map((k) => {
+          const on = enabledKinds.has(k);
+          const dotColor = KIND_COLORS[k];
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => toggleKind(k)}
+              className={[
+                "flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors",
+                on ? "bg-subtle text-fg" : "text-muted hover:bg-subtle",
+              ].join(" ")}
+            >
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ background: dotColor, opacity: on ? 1 : 0.3 }}
+              />
+              <span className="font-medium">{KIND_LABEL[k]}</span>
+              <span className="font-mono text-[10px] text-muted">{counts[k]}</span>
+            </button>
+          );
+        })}
+        <div className="mx-1 h-4 w-px bg-border" />
+        {(["ALL", "HIGH", "MODERATE", "LOW"] as const).map((c) => (
           <button
-            key={f}
+            key={c}
             type="button"
-            onClick={() => setFilter(f)}
+            onClick={() => setConfidenceFilter(c)}
             className={[
-              "rounded px-2 py-1 transition-colors",
-              filter === f
-                ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                : "hover:bg-neutral-100 dark:hover:bg-neutral-800",
+              "rounded-md px-2 py-1 transition-colors",
+              confidenceFilter === c
+                ? "bg-fg text-canvas"
+                : "text-muted hover:bg-subtle",
             ].join(" ")}
           >
-            {f}
+            {c}
           </button>
         ))}
-        <span className="ml-2 text-neutral-500">
-          {nodes.length} claim{nodes.length === 1 ? "" : "s"} · {edges.length} edge{edges.length === 1 ? "" : "s"}
+        <span className="ml-1 font-mono text-[10px] text-muted">
+          {nodes.length} · {edges.length} edges
         </span>
       </div>
 
       {hovered && (
-        <ClaimHoverPanel
-          claim={hovered}
-          onMouseEnter={() => {
-            cancelClose();
-          }}
+        <EntityHoverPanel
+          entity={hovered}
+          onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
           onClose={() => setHoveredId(null)}
         />

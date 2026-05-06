@@ -2,7 +2,7 @@ import dagre from "@dagrejs/dagre";
 import type { Edge, Node } from "@xyflow/react";
 
 const NODE_W = 240;
-const NODE_H = 90;
+const NODE_H = 110;
 
 export function dagreLayout<TNode extends Node>(
   nodes: TNode[],
@@ -12,10 +12,10 @@ export function dagreLayout<TNode extends Node>(
   const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: direction,
-    nodesep: 26,
-    ranksep: 70,
-    marginx: 30,
-    marginy: 30,
+    nodesep: 28,
+    ranksep: 80,
+    marginx: 40,
+    marginy: 40,
   });
   g.setDefaultEdgeLabel(() => ({}));
 

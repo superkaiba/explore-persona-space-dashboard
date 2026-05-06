@@ -3,33 +3,107 @@
 @tailwind utilities;
 
 :root {
-  --bg: 250 250 249;
-  --fg: 23 23 23;
-  --muted: 115 115 115;
-  --border: 229 229 229;
-  --panel: 255 255 255;
+  --canvas: 250 250 251;        /* page bg */
+  --panel: 255 255 255;         /* card bg */
+  --fg: 17 17 17;
+  --muted: 115 115 122;
+  --border: 226 226 232;
+  --subtle: 244 244 246;
+  --hi: 22 163 74;              /* HIGH confidence */
+  --mod: 234 179 8;             /* MODERATE */
+  --lo: 156 163 175;            /* LOW */
+  --running: 59 130 246;        /* in-progress experiment */
+  --proposed: 139 92 246;       /* proposed todo */
+  --untriaged: 148 163 184;     /* untriaged */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: 23 23 23;
-    --fg: 245 245 244;
-    --muted: 163 163 163;
-    --border: 38 38 38;
-    --panel: 28 28 28;
+    --canvas: 12 12 14;
+    --panel: 22 22 26;
+    --fg: 240 240 244;
+    --muted: 156 163 175;
+    --border: 39 39 44;
+    --subtle: 28 28 32;
   }
 }
 
-html, body {
-  background: rgb(var(--bg));
-  color: rgb(var(--fg));
-}
+html, body { background: rgb(var(--canvas)); color: rgb(var(--fg)); }
 
 body {
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+  letter-spacing: -0.01em;
 }
 
+/* Reusable surfaces */
 .panel {
   background: rgb(var(--panel));
   border: 1px solid rgb(var(--border));
+  box-shadow: 0 1px 0 0 rgb(var(--border) / 0.4);
 }
+.subtle { background: rgb(var(--subtle)); }
+
+/* React Flow base override */
+.react-flow__attribution { display: none; }
+.react-flow__minimap {
+  background: rgb(var(--panel)) !important;
+  border: 1px solid rgb(var(--border)) !important;
+  border-radius: 8px;
+}
+.react-flow__controls {
+  background: rgb(var(--panel)) !important;
+  border: 1px solid rgb(var(--border)) !important;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+}
+.react-flow__controls-button {
+  background: transparent !important;
+  border-bottom: 1px solid rgb(var(--border)) !important;
+  color: rgb(var(--fg)) !important;
+}
+.react-flow__controls-button:hover { background: rgb(var(--subtle)) !important; }
+
+.react-flow__edge-path { transition: stroke-width 0.15s ease; }
+.react-flow__edge:hover .react-flow__edge-path { stroke-width: 2.5px; }
+
+.react-flow__node { font-family: inherit; }
+
+/* Glow animation for in-progress experiments */
+@keyframes pulse-running {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(59 130 246 / 0.45), 0 1px 2px rgb(0 0 0 / 0.05); }
+  50%      { box-shadow: 0 0 0 8px rgb(59 130 246 / 0), 0 1px 4px rgb(59 130 246 / 0.3); }
+}
+.glow-running {
+  animation: pulse-running 2s ease-in-out infinite;
+  border-color: rgb(var(--running)) !important;
+}
+
+/* Markdown / prose tweaks for hover panel */
+.prose-tight :where(h1, h2, h3) { margin-top: 1em; margin-bottom: 0.4em; line-height: 1.3; }
+.prose-tight :where(h1) { font-size: 1.1rem; font-weight: 600; }
+.prose-tight :where(h2) { font-size: 1rem; font-weight: 600; }
+.prose-tight :where(h3) { font-size: 0.92rem; font-weight: 600; color: rgb(var(--muted)); text-transform: uppercase; letter-spacing: 0.04em; }
+.prose-tight :where(p) { margin: 0.45em 0; line-height: 1.55; }
+.prose-tight :where(ul, ol) { margin: 0.4em 0; padding-left: 1.2em; }
+.prose-tight :where(li) { margin: 0.15em 0; }
+.prose-tight :where(strong) { font-weight: 600; }
+.prose-tight :where(table) { font-size: 0.78rem; margin: 0.6em 0; border-collapse: collapse; }
+.prose-tight :where(th, td) { padding: 0.3em 0.5em; border: 1px solid rgb(var(--border)); }
+.prose-tight :where(th) { background: rgb(var(--subtle)); font-weight: 600; text-align: left; }
+.prose-tight :where(code):not(:where(pre code)) {
+  background: rgb(var(--subtle)); border-radius: 4px; padding: 0.05em 0.3em;
+  font-family: var(--font-mono), ui-monospace, monospace; font-size: 0.85em;
+}
+.prose-tight :where(pre) {
+  background: rgb(var(--subtle)); border: 1px solid rgb(var(--border));
+  border-radius: 6px; padding: 0.6em 0.8em; font-size: 0.78rem; overflow-x: auto;
+}
+.prose-tight :where(img) { border: 1px solid rgb(var(--border)); border-radius: 6px; margin: 0.5em 0; }
+.prose-tight :where(a) { color: rgb(37 99 235); text-decoration: underline; text-underline-offset: 2px; }
+.prose-tight :where(a:hover) { color: rgb(29 78 216); }
+.prose-tight :where(blockquote) {
+  margin: 0.5em 0; padding-left: 0.8em;
+  border-left: 3px solid rgb(var(--border)); color: rgb(var(--muted));
+}
+.prose-tight :where(hr) { margin: 1em 0; border-color: rgb(var(--border)); }
