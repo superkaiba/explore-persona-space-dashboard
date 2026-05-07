@@ -18,10 +18,26 @@ export function WindowsLayer() {
   const { windows, close, focus, move, resize } = useWindows();
   const [email, setEmail] = useState<string | null>(null);
 
-  // Get the current user email for chat-tab attribution. Best-effort.
+  // Track current user email and keep it live across sign-in / sign-out so
+  // open windows update immediately after the inline magic-link flow.
+  // The magic link opens in a separate tab, so we also re-check on focus.
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+    const refresh = () =>
+      supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+    refresh();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setEmail(session?.user?.email ?? null);
+    });
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
   }, []);
 
   if (windows.length === 0) return null;
