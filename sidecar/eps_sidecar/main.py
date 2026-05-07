@@ -1,25 +1,36 @@
 """FastAPI sidecar that subprocesses the real `claude` CLI in headless mode.
 
-Why subprocess vs the Python claude-agent-sdk:
-  - The CLI auto-loads CLAUDE.md, settings.json, .mcp.json from the project,
-    plus ~/.claude memory, plugins, custom subagents, skills, and slash
-    commands. Identical to running `claude` in a terminal.
-  - The Python SDK is a thinner agent runtime that does NOT auto-load any
-    of the above; we'd have to reconstruct each piece by hand.
-  - We pipe `--output-format stream-json --include-partial-messages` and
-    translate to our SSE event shape (token / tool_use / tool_result /
-    done / error).
+Sessions are PERSISTENT: one `claude` subprocess per chat thread, kept alive
+across messages. Cold start (CLAUDE.md, 200+ tools, plugins, MCP, memory)
+is ~10-15s on first message; subsequent messages reuse the loaded process
+and respond in <1s + agent-thinking time.
 
-Auth: Vercel proxy must include `Authorization: Bearer <SIDECAR_SHARED_SECRET>`.
+Subprocess args:
+  claude --print --verbose
+         --input-format stream-json
+         --output-format stream-json
+         --include-partial-messages
+         --permission-mode bypassPermissions
+         --no-session-persistence
+         --max-budget-usd <N>
+
+Sessions are GC'd after SESSION_IDLE_S seconds of inactivity.
+
+Auth: shared secret OR short-lived HMAC token (see _verify_hmac_token).
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
 import secrets
+import time as _time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -42,8 +53,10 @@ HOST = os.environ.get("SIDECAR_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SIDECAR_PORT", "7654"))
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/thomasjiralerspong/.local/bin/claude")
 PERMISSION_MODE = os.environ.get("CLAUDE_PERMISSION_MODE", "bypassPermissions")
-MAX_BUDGET_USD = os.environ.get("SIDECAR_MAX_BUDGET_USD", "1.00")  # per request
-SUBPROC_TIMEOUT_S = int(os.environ.get("SIDECAR_TIMEOUT_S", "300"))
+MAX_BUDGET_USD = os.environ.get("SIDECAR_MAX_BUDGET_USD", "1.00")
+TURN_TIMEOUT_S = int(os.environ.get("SIDECAR_TURN_TIMEOUT_S", "300"))
+SESSION_IDLE_S = int(os.environ.get("SIDECAR_SESSION_IDLE_S", str(30 * 60)))
+SESSION_SWEEP_S = 60
 
 if not SHARED_SECRET:
     log.warning("SIDECAR_SHARED_SECRET not set — refusing all requests")
@@ -54,12 +67,7 @@ if not os.path.isfile(CLAUDE_BIN) or not os.access(CLAUDE_BIN, os.X_OK):
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────
-import base64
-import hashlib
-import hmac
-import time as _time
-
-TOKEN_MAX_TTL_MS = 10 * 60 * 1000  # accept tokens with exp at most 10min in the future
+TOKEN_MAX_TTL_MS = 10 * 60 * 1000
 
 
 def _b64url_decode(s: str) -> bytes:
@@ -99,7 +107,6 @@ def require_secret(request: Request) -> None:
     if not auth.lower().startswith("bearer "):
         raise HTTPException(401, "missing bearer token")
     token = auth[7:].strip()
-    # Accept either the long-lived shared secret (proxy path) OR a short-lived HMAC token.
     if secrets.compare_digest(token, SHARED_SECRET):
         return
     if _verify_hmac_token(token):
@@ -107,8 +114,130 @@ def require_secret(request: Request) -> None:
     raise HTTPException(403, "invalid token")
 
 
+# ── Session management ────────────────────────────────────────────────────
+class Session:
+    """One long-running `claude` subprocess. One turn at a time (lock)."""
+
+    def __init__(self, sid: str, proc: asyncio.subprocess.Process) -> None:
+        self.id = sid
+        self.proc = proc
+        self.queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        self.lock = asyncio.Lock()
+        self.last_active = _time.time()
+        self.ready = asyncio.Event()  # set when init event arrives
+        self.reader_task: asyncio.Task[None] | None = None
+
+    async def stop(self) -> None:
+        if self.reader_task and not self.reader_task.done():
+            self.reader_task.cancel()
+        if self.proc.returncode is None:
+            self.proc.terminate()
+            try:
+                await asyncio.wait_for(self.proc.wait(), timeout=5)
+            except TimeoutError:
+                self.proc.kill()
+
+
+sessions: dict[str, Session] = {}
+sessions_lock = asyncio.Lock()
+
+
+async def _stdout_reader(session: Session) -> None:
+    """Pump JSON lines from claude's stdout into session.queue forever."""
+    proc = session.proc
+    assert proc.stdout is not None
+    buf = b""
+    try:
+        while True:
+            chunk = await proc.stdout.read(65536)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                raw, buf = buf.split(b"\n", 1)
+                line = raw.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if evt.get("type") == "system" and evt.get("subtype") == "init":
+                    session.ready.set()
+                await session.queue.put(evt)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("session %s reader crashed", session.id[:8])
+    finally:
+        # Signal stream end with a sentinel
+        await session.queue.put(None)
+
+
+async def create_session(sid: str) -> Session:
+    args = [
+        CLAUDE_BIN,
+        "--print",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--permission-mode",
+        PERMISSION_MODE,
+        "--no-session-persistence",
+        "--max-budget-usd",
+        MAX_BUDGET_USD,
+    ]
+    env = {**os.environ, "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY}
+
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=WORKDIR,
+        env=env,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        limit=16 * 1024 * 1024,
+    )
+    session = Session(sid, proc)
+    session.reader_task = asyncio.create_task(_stdout_reader(session))
+    sessions[sid] = session
+    log.info("session %s spawned (pid=%s)", sid[:8], proc.pid)
+    return session
+
+
+async def gc_loop() -> None:
+    while True:
+        await asyncio.sleep(SESSION_SWEEP_S)
+        now = _time.time()
+        stale: list[str] = []
+        async with sessions_lock:
+            for sid, s in list(sessions.items()):
+                if now - s.last_active > SESSION_IDLE_S or s.proc.returncode is not None:
+                    stale.append(sid)
+        for sid in stale:
+            s = sessions.pop(sid, None)
+            if s:
+                log.info("session %s reaping (idle/dead)", sid[:8])
+                await s.stop()
+
+
 # ── App ───────────────────────────────────────────────────────────────────
 app = FastAPI(title="EPS Sidecar")
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    asyncio.create_task(gc_loop())
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    for s in list(sessions.values()):
+        await s.stop()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -127,6 +256,8 @@ def health() -> dict[str, Any]:
         "claude_bin": CLAUDE_BIN,
         "permission_mode": PERMISSION_MODE,
         "max_budget_usd": MAX_BUDGET_USD,
+        "session_idle_s": SESSION_IDLE_S,
+        "active_sessions": len(sessions),
         "has_secret": bool(SHARED_SECRET),
         "has_anthropic_key": bool(ANTHROPIC_API_KEY),
     }
@@ -139,93 +270,81 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
+    session_id: str | None = None
 
 
 @app.post("/chat", dependencies=[Depends(require_secret)])
 async def chat(req: ChatRequest) -> EventSourceResponse:
-    """Spawn `claude --print` and translate stream-json → our SSE events."""
     last_user = next((m for m in reversed(req.messages) if m.role == "user"), None)
     if last_user is None:
         raise HTTPException(400, "no user message")
     prompt = last_user.content
 
-    args = [
-        CLAUDE_BIN,
-        "--print",
-        "--verbose",
-        "--output-format",
-        "stream-json",
-        "--include-partial-messages",
-        "--permission-mode",
-        PERMISSION_MODE,
-        "--no-session-persistence",
-        "--max-budget-usd",
-        MAX_BUDGET_USD,
-        prompt,
-    ]
-    env = {**os.environ, "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY}
+    # Use the caller's session_id verbatim if given (creating a new session
+    # under that id if it doesn't exist yet); otherwise mint one.
+    sid = req.session_id or uuid.uuid4().hex
+    is_new = sid not in sessions
 
     async def event_stream() -> AsyncIterator[dict[str, str]]:
-        # Tell the client we're alive immediately so they don't see a 12-15s
-        # blank during claude --print's cold start (loads CLAUDE.md, tools,
-        # agents, plugins, MCP servers, etc.).
-        yield {"event": "starting", "data": json.dumps({"phase": "spawning"})}
+        # Phase 0: tell client we're alive + which session
+        yield {"event": "session", "data": json.dumps({"session_id": sid, "fresh": is_new})}
+        yield {
+            "event": "starting",
+            "data": json.dumps({"phase": "spawning" if is_new else "warm"}),
+        }
 
-        # claude-code's stream-json `init` event lists every tool / skill /
-        # agent / plugin / MCP server, easily exceeding asyncio's default
-        # 64KB readline limit. Raise it to 16MB so the parser doesn't choke.
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            cwd=WORKDIR,
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            limit=16 * 1024 * 1024,
-        )
-
-        yield {"event": "starting", "data": json.dumps({"phase": "loading"})}
         try:
-            assert proc.stdout is not None
-            async with asyncio.timeout(SUBPROC_TIMEOUT_S):
-                buf = b""
-                while True:
-                    chunk = await proc.stdout.read(65536)
-                    if not chunk:
-                        break
-                    buf += chunk
-                    while b"\n" in buf:
-                        raw, buf = buf.split(b"\n", 1)
-                        line = raw.decode("utf-8", errors="replace").strip()
-                        if not line:
-                            continue
-                        try:
-                            evt = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        for sse in translate(evt):
-                            yield {"event": sse[0], "data": json.dumps(sse[1])}
-                code = await proc.wait()
-                if code != 0:
-                    err = (
-                        (await proc.stderr.read()).decode("utf-8", errors="replace")
-                        if proc.stderr
-                        else ""
+            if is_new:
+                async with sessions_lock:
+                    if sid not in sessions:
+                        await create_session(sid)
+                session = sessions[sid]
+                yield {"event": "starting", "data": json.dumps({"phase": "loading"})}
+            else:
+                session = sessions[sid]
+
+            async with session.lock:
+                session.last_active = _time.time()
+
+                # Send the user message via stdin
+                assert session.proc.stdin is not None
+                user_msg = (
+                    json.dumps(
+                        {"type": "user", "message": {"role": "user", "content": prompt}},
+                        ensure_ascii=False,
                     )
-                    yield {
-                        "event": "error",
-                        "data": json.dumps({"message": f"claude exited {code}: {err[:500]}"}),
-                    }
-                    yield {"event": "done", "data": json.dumps({"stop_reason": "error"})}
+                    + "\n"
+                )
+                session.proc.stdin.write(user_msg.encode("utf-8"))
+                await session.proc.stdin.drain()
+
+                # Stream events until the result event for this turn
+                async with asyncio.timeout(TURN_TIMEOUT_S):
+                    while True:
+                        evt = await session.queue.get()
+                        if evt is None:
+                            yield {
+                                "event": "error",
+                                "data": json.dumps({"message": "session ended unexpectedly"}),
+                            }
+                            yield {"event": "done", "data": json.dumps({"stop_reason": "ended"})}
+                            return
+
+                        for sse_name, sse_data in translate(evt):
+                            yield {"event": sse_name, "data": json.dumps(sse_data)}
+
+                        if evt.get("type") == "result":
+                            session.last_active = _time.time()
+                            return
+
         except TimeoutError:
-            proc.terminate()
             yield {
                 "event": "error",
-                "data": json.dumps({"message": f"timeout after {SUBPROC_TIMEOUT_S}s"}),
+                "data": json.dumps({"message": f"turn timed out after {TURN_TIMEOUT_S}s"}),
             }
             yield {"event": "done", "data": json.dumps({"stop_reason": "timeout"})}
         except asyncio.CancelledError:
-            log.info("client disconnected; killing claude subprocess")
-            proc.terminate()
+            log.info("client disconnected mid-turn (session %s)", sid[:8])
             raise
         except Exception as e:
             log.exception("event_stream error")
@@ -235,30 +354,29 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
     return EventSourceResponse(event_stream())
 
 
-def translate(evt: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    """Map a claude-code stream-json event to zero+ of our SSE events.
+@app.post("/end-session", dependencies=[Depends(require_secret)])
+async def end_session(req: dict[str, Any]) -> dict[str, bool]:
+    sid = req.get("session_id")
+    if not sid or not isinstance(sid, str):
+        raise HTTPException(400, "session_id required")
+    s = sessions.pop(sid, None)
+    if s:
+        await s.stop()
+    return {"ok": True}
 
-    Our event names mirror the lite chat:
-      - token        {text}              partial assistant text
-      - tool_use     {name, input}       tool call announce
-      - tool_result  {name, ok}          tool finished
-      - thinking     {text}              extended-thinking deltas (optional)
-      - done         {stop_reason}       final
-      - error        {message}
-    """
+
+def translate(evt: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Map a claude-code stream-json event to zero+ of our SSE events."""
     t = evt.get("type")
     if t == "system":
         sub = evt.get("subtype")
-        # Surface init (agent fully loaded, ready to start the actual turn).
         if sub == "init":
             return [("ready", {"model": evt.get("model"), "tools": len(evt.get("tools", []))})]
-        # Surface hook failures only; ignore the rest of the startup chatter.
         if sub == "hook_response" and evt.get("exit_code", 0) != 0:
             return [("error", {"message": f"hook failed: {evt.get('hook_name')}"})]
         return []
 
     if t == "stream_event":
-        # Partial deltas streamed as Anthropic SSE events embedded in JSON.
         inner = evt.get("event", {})
         if inner.get("type") == "content_block_delta":
             delta = inner.get("delta", {})
@@ -270,8 +388,6 @@ def translate(evt: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         return []
 
     if t == "assistant":
-        # Whole message — usually arrives alongside stream_event deltas; we
-        # only forward tool_use blocks here (text already came as deltas).
         msg = evt.get("message", {})
         out: list[tuple[str, dict[str, Any]]] = []
         for block in msg.get("content", []):

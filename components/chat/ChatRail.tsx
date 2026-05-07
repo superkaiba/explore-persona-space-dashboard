@@ -47,6 +47,9 @@ export function ChatRail() {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [pending, setPending] = useState(false);
+  // Persistent claude --print subprocess on the VM, keyed by this id. Set
+  // by the client on first use, reused on every subsequent message.
+  const sessionIdRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,13 +64,22 @@ export function ChatRail() {
     if (!text || pending) return;
     setDraft("");
 
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = crypto.randomUUID().replace(/-/g, "");
+    }
+    const sessionId = sessionIdRef.current;
+
     const userMsg: Msg = { id: crypto.randomUUID(), role: "user", text };
     const assistantId = crypto.randomUUID();
+    // First message in a session goes through cold start; subsequent ones
+    // reuse the loaded subprocess. Don't show the loading pill if we're
+    // already warm.
+    const isFirstTurn = messages.filter((m) => m.role === "assistant").length === 0;
     const assistantMsg: Msg = {
       id: assistantId,
       role: "assistant",
       blocks: [],
-      startupPhase: "spawning",
+      startupPhase: isFirstTurn ? "spawning" : null,
       startedAt: Date.now(),
     };
     setMessages((m) => [...m, userMsg, assistantMsg]);
@@ -102,7 +114,9 @@ export function ChatRail() {
         sidecar_url: string;
       };
 
-      // Step 2: stream directly from the sidecar — no Vercel in the data path
+      // Step 2: stream directly from the sidecar — no Vercel in the data path.
+      // session_id pins this turn to the same persistent claude subprocess,
+      // so cold start (CLAUDE.md, tools, MCP, memory) is paid once.
       const res = await fetch(`${sidecarUrl}/chat`, {
         method: "POST",
         headers: {
@@ -110,15 +124,8 @@ export function ChatRail() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          messages: [
-            ...messages
-              .filter((m) => m.role === "user")
-              .map((m) => ({
-                role: "user",
-                content: (m as Extract<Msg, { role: "user" }>).text,
-              })),
-            { role: "user", content: text },
-          ],
+          session_id: sessionId,
+          messages: [{ role: "user", content: text }],
         }),
       });
       if (!res.ok || !res.body) {
@@ -158,10 +165,24 @@ export function ChatRail() {
             continue;
           }
 
-          if (eventName === "starting") {
-            updateAssistant((m) => {
-              m.startupPhase = (data.phase as StartupPhase) ?? "spawning";
-            });
+          if (eventName === "session") {
+            const newSid = (data.session_id as string) ?? null;
+            if (newSid && sessionIdRef.current !== newSid) {
+              sessionIdRef.current = newSid;
+            }
+          } else if (eventName === "starting") {
+            const phase = (data.phase as string) ?? "spawning";
+            // Skip the pill entirely for warm reuse; the response should
+            // start streaming within ~1s anyway.
+            if (phase === "warm") {
+              updateAssistant((m) => {
+                m.startupPhase = null;
+              });
+            } else {
+              updateAssistant((m) => {
+                m.startupPhase = (phase as StartupPhase) ?? "spawning";
+              });
+            }
           } else if (eventName === "ready") {
             updateAssistant((m) => {
               m.startupPhase = "ready";
