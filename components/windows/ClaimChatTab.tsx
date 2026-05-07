@@ -78,7 +78,7 @@ export function ClaimChatTab({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-border bg-subtle/30 px-2 py-1.5 text-[11px]">
+      <div className="flex shrink-0 items-center gap-1 border-b border-border bg-subtle/30 px-4 py-2 text-[11px]">
         {!loaded ? (
           <span className="text-muted">Loading…</span>
         ) : (
@@ -114,7 +114,7 @@ export function ClaimChatTab({
           </>
         )}
       </div>
-      <div className="flex-1 overflow-hidden p-3">
+      <div className="flex-1 overflow-hidden p-5">
         {activeSid ? (
           <ConversationView
             key={activeSid}

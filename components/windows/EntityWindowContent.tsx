@@ -87,7 +87,7 @@ export function EntityWindowContent({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-b border-border bg-subtle/40 px-4 py-3">
+      <header className="border-b border-border bg-subtle/40 px-6 py-4">
         <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-muted">
           <span
             className={`inline-block h-1.5 w-1.5 rounded-full ${KIND_COLOR[entity.kind]}`}
@@ -169,13 +169,13 @@ export function EntityWindowContent({
             currentUserEmail={currentUserEmail}
           />
         ) : (
-          <div className="h-full overflow-y-auto p-4">
+          <div className="h-full overflow-y-auto p-6">
             {entity.hero && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={entity.hero.url}
                 alt={entity.hero.caption ?? "hero"}
-                className="mb-4 w-full rounded-md border border-border"
+                className="mb-5 w-full rounded-md border border-border"
               />
             )}
             <div className="prose-tight text-[12.5px]">

@@ -47,7 +47,7 @@ export function WindowsLayer() {
           className="pointer-events-auto"
         >
           <div className="panel flex h-full flex-col overflow-hidden rounded-lg shadow-rail">
-            <div className="window-drag-handle flex shrink-0 cursor-move items-center gap-2 border-b border-border bg-subtle/60 px-2.5 py-1.5">
+            <div className="window-drag-handle flex shrink-0 cursor-move items-center gap-2 border-b border-border bg-subtle/60 px-4 py-2">
               <span className="font-mono text-[10px] text-muted">
                 {KIND_LABEL[w.kind] ?? w.kind} · drag here
               </span>
