@@ -150,6 +150,7 @@ export const comments = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     authorKind: text("author_kind").notNull(),
     author: text("author").notNull(),
+    authorUserId: uuid("author_user_id"),
     body: text("body").notNull(),
     entityKind: entityKindEnum("entity_kind").notNull(),
     entityId: uuid("entity_id").notNull(),
@@ -183,6 +184,9 @@ export const chatSessions = pgTable("chat_session", {
   scopeEntityId: uuid("scope_entity_id"),
   agentHandle: text("agent_handle"),
   title: text("title"),
+  createdByUserId: uuid("created_by_user_id"),
+  lastUserId: uuid("last_user_id"),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -197,6 +201,7 @@ export const chatMessages = pgTable(
     role: messageRoleEnum("role").notNull(),
     body: text("body").notNull(),
     toolCallJson: jsonb("tool_call_json"),
+    userId: uuid("user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({

@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { EditableTitle } from "@/components/editor/EditableTitle";
 import { EditableBody } from "@/components/editor/EditableBody";
 import { EdgeManager } from "@/components/editor/EdgeManager";
+import { ClaimDiscussion } from "@/components/discussion/ClaimDiscussion";
 
 export const dynamic = "force-dynamic";
 
@@ -189,6 +190,12 @@ export default async function ClaimPage({
           )}
 
           <EditableBody claimId={claim.id} initialBody={markdown} canEdit={canEdit} />
+
+          <ClaimDiscussion
+            claimId={claim.id}
+            claimTitle={claim.title}
+            canPost={canEdit}
+          />
         </div>
 
         <aside className="space-y-6 text-[12.5px]">
