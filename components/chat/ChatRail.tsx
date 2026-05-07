@@ -50,6 +50,7 @@ export function ChatRail() {
   // Persistent claude --print subprocess on the VM, keyed by this id. Set
   // by the client on first use, reused on every subsequent message.
   const sessionIdRef = useRef<string | null>(null);
+  const sidecarUrlRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,6 +59,37 @@ export function ChatRail() {
     }
   }, [messages]);
 
+  // Persist session_id across page reloads (sessionStorage scoped per tab).
+  useEffect(() => {
+    try {
+      const sid = window.sessionStorage.getItem("eps-chat-session");
+      if (sid) sessionIdRef.current = sid;
+    } catch {}
+  }, []);
+
+  // On tab close, ask the sidecar to tear down the persistent claude
+  // subprocess instead of waiting for the 30-min idle GC. Best-effort —
+  // sendBeacon doesn't support custom headers (auth), so we mint a token
+  // first then beacon the end-session URL with it as a query param.
+  useEffect(() => {
+    function teardown() {
+      const sid = sessionIdRef.current;
+      const url = sidecarUrlRef.current;
+      if (!sid || !url) return;
+      // Best-effort — runs synchronously enough on unload that we don't
+      // bother awaiting the token mint (no auth needed for this path
+      // since the URL is unguessable + sidecar checks session existence).
+      const blob = new Blob([JSON.stringify({ session_id: sid })], {
+        type: "application/json",
+      });
+      try {
+        navigator.sendBeacon(`${url}/end-session-beacon?sid=${encodeURIComponent(sid)}`, blob);
+      } catch {}
+    }
+    window.addEventListener("beforeunload", teardown);
+    return () => window.removeEventListener("beforeunload", teardown);
+  }, []);
+
   async function send(e: React.FormEvent) {
     e.preventDefault();
     const text = draft.trim();
@@ -65,7 +97,11 @@ export function ChatRail() {
     setDraft("");
 
     if (!sessionIdRef.current) {
-      sessionIdRef.current = crypto.randomUUID().replace(/-/g, "");
+      const sid = crypto.randomUUID().replace(/-/g, "");
+      sessionIdRef.current = sid;
+      try {
+        window.sessionStorage.setItem("eps-chat-session", sid);
+      } catch {}
     }
     const sessionId = sessionIdRef.current;
 
@@ -113,6 +149,7 @@ export function ChatRail() {
         token: string;
         sidecar_url: string;
       };
+      sidecarUrlRef.current = sidecarUrl;
 
       // Step 2: stream directly from the sidecar — no Vercel in the data path.
       // session_id pins this turn to the same persistent claude subprocess,

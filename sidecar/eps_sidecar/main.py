@@ -241,7 +241,10 @@ async def _shutdown() -> None:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://explore-persona-space-dashboard.vercel.app"],
+    allow_origins=[
+        "https://dashboard.superkaiba.com",
+        "https://explore-persona-space-dashboard.vercel.app",
+    ],
     allow_credentials=False,
     allow_methods=["POST", "GET"],
     allow_headers=["authorization", "content-type"],
@@ -362,6 +365,20 @@ async def end_session(req: dict[str, Any]) -> dict[str, bool]:
     s = sessions.pop(sid, None)
     if s:
         await s.stop()
+    return {"ok": True}
+
+
+@app.post("/end-session-beacon")
+async def end_session_beacon(sid: str = "") -> dict[str, bool]:
+    """Browser tab-close cleanup. sendBeacon can't set Authorization headers,
+    so we authenticate by session_id (only the owner of an active session
+    knows its random hex)."""
+    if not sid or sid not in sessions:
+        return {"ok": False}
+    s = sessions.pop(sid, None)
+    if s:
+        await s.stop()
+        log.info("session %s ended via beacon", sid[:8])
     return {"ok": True}
 
 

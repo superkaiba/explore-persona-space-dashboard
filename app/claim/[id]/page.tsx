@@ -7,6 +7,7 @@ import { claims, edges, experiments, figures, todos } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { EditableTitle } from "@/components/editor/EditableTitle";
 import { EditableBody } from "@/components/editor/EditableBody";
+import { EdgeManager } from "@/components/editor/EdgeManager";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,18 @@ export default async function ClaimPage({
     data: { user },
   } = await supabase.auth.getUser();
   const canEdit = !!user;
+
+  // All-claims option list for the EdgeManager (loaded only if editable)
+  const allClaimOptions = canEdit
+    ? await db
+        .select({
+          id: claims.id,
+          title: claims.title,
+          confidence: claims.confidence,
+          githubIssueNumber: claims.githubIssueNumber,
+        })
+        .from(claims)
+    : [];
 
   // Hero figure
   let hero: { url: string; caption: string | null } | null = null;
@@ -213,6 +226,17 @@ export default async function ClaimPage({
             linkedTodosList.length === 0 && (
               <p className="text-muted">No linked entities.</p>
             )}
+
+          {canEdit && <EdgeManager
+            fromClaimId={claim.id}
+            allClaims={allClaimOptions}
+            alreadyLinkedIds={
+              new Set([
+                ...derivesFrom.map((c) => c.id),
+                ...derivedBy.map((c) => c.id),
+              ])
+            }
+          />}
         </aside>
       </article>
     </div>
