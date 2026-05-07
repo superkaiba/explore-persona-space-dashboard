@@ -1,12 +1,28 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Rnd } from "react-rnd";
 import { X } from "lucide-react";
 import { useWindows } from "./WindowProvider";
-import { ClaimWindowContent } from "./ClaimWindowContent";
+import { EntityWindowContent } from "./EntityWindowContent";
+import { createClient } from "@/lib/supabase/client";
+
+const KIND_LABEL: Record<string, string> = {
+  claim: "claim",
+  experiment: "experiment",
+  proposed: "proposed",
+  untriaged: "untriaged",
+};
 
 export function WindowsLayer() {
   const { windows, close, focus, move, resize } = useWindows();
+  const [email, setEmail] = useState<string | null>(null);
+
+  // Get the current user email for chat-tab attribution. Best-effort.
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+  }, []);
 
   if (windows.length === 0) return null;
 
@@ -32,7 +48,9 @@ export function WindowsLayer() {
         >
           <div className="panel flex h-full flex-col overflow-hidden rounded-lg shadow-rail">
             <div className="window-drag-handle flex shrink-0 cursor-move items-center gap-2 border-b border-border bg-subtle/60 px-2.5 py-1.5">
-              <span className="font-mono text-[10px] text-muted">claim · drag here</span>
+              <span className="font-mono text-[10px] text-muted">
+                {KIND_LABEL[w.kind] ?? w.kind} · drag here
+              </span>
               <button
                 type="button"
                 onClick={() => close(w.id)}
@@ -43,7 +61,7 @@ export function WindowsLayer() {
               </button>
             </div>
             <div className="flex-1 overflow-hidden bg-panel">
-              {w.kind === "claim" && <ClaimWindowContent claimId={w.id} />}
+              <EntityWindowContent kind={w.kind} id={w.id} currentUserEmail={email} />
             </div>
           </div>
         </Rnd>

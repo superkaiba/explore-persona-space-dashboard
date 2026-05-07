@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Edit3 } from "lucide-react";
 import { RichBodyEditor } from "./RichBodyEditor";
+import { IssueRef, linkifyIssueRefs } from "@/components/IssueRef";
 
 type Props = {
   claimId: string;
@@ -54,11 +55,17 @@ export function EditableBody({ claimId, initialBody, canEdit }: Props) {
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
-            a: ({ href, children }) => (
-              <a href={href} target="_blank" rel="noopener noreferrer">
-                {children}
-              </a>
-            ),
+            a: ({ href, children }) => {
+              if (typeof href === "string" && href.startsWith("issue:")) {
+                const n = parseInt(href.slice(6), 10);
+                if (!Number.isNaN(n)) return <IssueRef num={n}>{children}</IssueRef>;
+              }
+              return (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {children}
+                </a>
+              );
+            },
             table: ({ children }) => (
               <div className="overflow-x-auto">
                 <table>{children}</table>
@@ -69,7 +76,7 @@ export function EditableBody({ claimId, initialBody, canEdit }: Props) {
               src ? <img src={typeof src === "string" ? src : ""} alt={alt ?? ""} loading="lazy" /> : null,
           }}
         >
-          {body || "_(no body)_"}
+          {body ? linkifyIssueRefs(body) : "_(no body)_"}
         </ReactMarkdown>
       </div>
       {canEdit && (

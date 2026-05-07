@@ -72,7 +72,8 @@ const KIND_LABEL: Record<EntityKind, string> = {
 
 export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProps) {
   const router = useRouter();
-  const { open: openWindow } = useWindows();
+  const { open: openWindow, windows: openedWindows } = useWindows();
+  const openIds = useMemo(() => new Set(openedWindows.map((w) => w.id)), [openedWindows]);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [enabledKinds, setEnabledKinds] = useState<Set<EntityKind>>(new Set(ALL_KINDS));
@@ -171,8 +172,9 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
     [scheduleClose],
   );
 
-  // Click opens a draggable window for claims (or jumps to GH for non-claims).
-  // Shift-click on a claim navigates to the full /claim/[id] page.
+  // Click opens a draggable window for the entity (works for all kinds).
+  // Shift-click on a claim navigates to its full detail page; non-claim
+  // shift-click opens GitHub.
   const onNodeClick: NodeMouseHandler<EntityNodeType> = useCallback(
     (e, node) => {
       const ent = entityById.get(node.id);
@@ -188,14 +190,11 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
         }
         return;
       }
-      if (ent.kind === "claim") {
-        openWindow("claim", node.id);
-      } else if (ent.githubIssueNumber != null) {
-        window.open(
-          `https://github.com/superkaiba/explore-persona-space/issues/${ent.githubIssueNumber}`,
-          "_blank",
-        );
-      }
+      // Open ALL entity kinds in a window. Hover panel auto-suppresses
+      // when a window is already open for the same entity (see hovered logic).
+      openWindow(ent.kind, node.id);
+      setHoveredId(null);
+      setPinnedId(null);
     },
     [entityById, router, openWindow],
   );
@@ -220,7 +219,11 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
   }, [entities]);
 
   const previewedId = pinnedId ?? hoveredId;
-  const previewed = previewedId ? entityById.get(previewedId) ?? null : null;
+  // Suppress the hover panel for entities that already have a window open.
+  const previewed =
+    previewedId && !openIds.has(previewedId)
+      ? entityById.get(previewedId) ?? null
+      : null;
 
   return (
     <div className="relative h-full w-full">
