@@ -174,6 +174,45 @@ async def _stdout_reader(session: Session) -> None:
         await session.queue.put(None)
 
 
+DASHBOARD_DATABASE_URL = os.environ.get("DASHBOARD_DATABASE_URL", "")
+
+DASHBOARD_CONTEXT_PROMPT = """\
+EPS Dashboard context (you are running on the project owner's VM):
+
+Dashboard URL:  https://dashboard.superkaiba.com
+Repo:           /home/thomasjiralerspong/explore-persona-space-dashboard
+DB schema:      <repo>/db/schema.ts (claim, experiment, run, todo, edge,
+                figure, comment, agent_task, chat_session, chat_message)
+
+Postgres is reachable directly via psql with the env var
+$DASHBOARD_DATABASE_URL (already set). Examples:
+
+  # last 7 days of conversations across all claims
+  psql "$DASHBOARD_DATABASE_URL" -c \\
+    "SELECT s.id, s.scope_entity_id AS claim_id, c.title, s.last_user_email,
+            s.last_message_at,
+            (SELECT count(*) FROM chat_message WHERE session_id = s.id) AS msgs
+       FROM chat_session s
+  LEFT JOIN claim c ON c.id = s.scope_entity_id
+      WHERE s.last_message_at > now() - interval '7 days'
+   ORDER BY s.last_message_at DESC;"
+
+  # full transcript of one conversation
+  psql "$DASHBOARD_DATABASE_URL" -c \\
+    "SELECT role, user_email, body, created_at FROM chat_message
+      WHERE session_id = '<sid>' ORDER BY created_at;"
+
+  # recent comments on a claim
+  psql "$DASHBOARD_DATABASE_URL" -c \\
+    "SELECT author_email, body, created_at FROM comment
+      WHERE entity_kind='claim' AND entity_id='<claim-id>' ORDER BY created_at;"
+
+When the user asks about past conversations, comments, or activity that
+isn't visible in the current chat thread, use psql to query the dashboard
+DB. Results are JSON-friendly via `psql --json` (use -A -F$'\\t' if
+piping for parsing)."""
+
+
 async def create_session(sid: str) -> Session:
     args = [
         CLAUDE_BIN,
@@ -189,8 +228,14 @@ async def create_session(sid: str) -> Session:
         "--no-session-persistence",
         "--max-budget-usd",
         MAX_BUDGET_USD,
+        "--append-system-prompt",
+        DASHBOARD_CONTEXT_PROMPT,
     ]
-    env = {**os.environ, "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY}
+    env = {
+        **os.environ,
+        "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
+        "DASHBOARD_DATABASE_URL": DASHBOARD_DATABASE_URL,
+    }
 
     proc = await asyncio.create_subprocess_exec(
         *args,

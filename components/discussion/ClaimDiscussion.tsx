@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import { MessageSquare, MessageCircle, Plus, Sparkles } from "lucide-react";
 import { CommentThread } from "./CommentThread";
 import { ConversationView } from "./ConversationView";
+import { PresenceIndicator } from "./PresenceIndicator";
 
 type Session = {
   id: string;
   title: string | null;
   createdByUserId: string | null;
+  createdByUserEmail: string | null;
   lastUserId: string | null;
+  lastUserEmail: string | null;
   lastMessageAt: string | null;
   createdAt: string;
   messageCount: number;
@@ -21,6 +24,7 @@ type Props = {
   claimId: string;
   claimTitle: string;
   canPost: boolean;
+  currentUserEmail: string | null;
 };
 
 function fmtRelative(d: string | null): string {
@@ -32,7 +36,7 @@ function fmtRelative(d: string | null): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-export function ClaimDiscussion({ claimId, claimTitle, canPost }: Props) {
+export function ClaimDiscussion({ claimId, claimTitle, canPost, currentUserEmail }: Props) {
   const [tab, setTab] = useState<Tab>("conversations");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [openSid, setOpenSid] = useState<string | null>(null);
@@ -75,6 +79,10 @@ export function ClaimDiscussion({ claimId, claimTitle, canPost }: Props) {
   return (
     <section className="mt-12 border-t border-border pt-6">
       <div className="mb-3 flex items-center gap-1 text-[11px]">
+        <div className="flex flex-1 items-center gap-1">
+          <span className="hidden">.</span>
+          <PresenceIndicator claimId={claimId} selfEmail={currentUserEmail} />
+        </div>
         <button
           type="button"
           onClick={() => {
@@ -122,6 +130,7 @@ export function ClaimDiscussion({ claimId, claimTitle, canPost }: Props) {
             claimId={claimId}
             claimTitle={claimTitle}
             sessionId={openSid}
+            currentUserEmail={currentUserEmail}
           />
         </div>
       ) : (
@@ -194,7 +203,9 @@ function ConversationsList({
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted">
                     <span>{s.messageCount} message{s.messageCount === 1 ? "" : "s"}</span>
-                    {s.lastUserId && <span>· last by {s.lastUserId.slice(0, 8)}</span>}
+                    {(s.lastUserEmail || s.createdByUserEmail) && (
+                      <span>· last by {s.lastUserEmail ?? s.createdByUserEmail}</span>
+                    )}
                   </div>
                 </div>
               </button>

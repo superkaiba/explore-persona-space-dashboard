@@ -21,6 +21,7 @@ export async function GET(
       body: chatMessages.body,
       toolCallJson: chatMessages.toolCallJson,
       userId: chatMessages.userId,
+      userEmail: chatMessages.userEmail,
       createdAt: chatMessages.createdAt,
     })
     .from(chatMessages)
@@ -59,13 +60,18 @@ export async function POST(
     body: m.body,
     toolCallJson: m.toolCallJson as object | undefined,
     userId: m.role === "user" ? user.id : null,
+    userEmail: m.role === "user" ? user.email ?? null : null,
   });
 
   // Bump session "last-spoken" metadata if this was a user message.
   if (m.role === "user") {
     await db
       .update(chatSessions)
-      .set({ lastUserId: user.id, lastMessageAt: new Date() })
+      .set({
+        lastUserId: user.id,
+        lastUserEmail: user.email ?? null,
+        lastMessageAt: new Date(),
+      })
       .where(eq(chatSessions.id, sid));
   } else {
     await db

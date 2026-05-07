@@ -31,7 +31,9 @@ export async function GET(
       id: chatSessions.id,
       title: chatSessions.title,
       createdByUserId: chatSessions.createdByUserId,
+      createdByUserEmail: chatSessions.createdByUserEmail,
       lastUserId: chatSessions.lastUserId,
+      lastUserEmail: chatSessions.lastUserEmail,
       lastMessageAt: chatSessions.lastMessageAt,
       createdAt: chatSessions.createdAt,
       messageCount: sql<number>`(SELECT count(*)::int FROM chat_message WHERE session_id = ${chatSessions.id})`,
@@ -68,6 +70,7 @@ export async function POST(
       scopeEntityId: id,
       title: body.title ?? null,
       createdByUserId: user.id,
+      createdByUserEmail: user.email ?? null,
     })
     .returning();
   // Eagerly insert no messages; first user message creates the seed turn.

@@ -195,6 +195,7 @@ export default async function ClaimPage({
             claimId={claim.id}
             claimTitle={claim.title}
             canPost={canEdit}
+            currentUserEmail={user?.email ?? null}
           />
         </div>
 

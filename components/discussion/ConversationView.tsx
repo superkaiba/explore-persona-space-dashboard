@@ -11,6 +11,7 @@ type DbMessage = {
   body: string;
   toolCallJson: Record<string, unknown> | null;
   userId: string | null;
+  userEmail: string | null;
   createdAt: string;
 };
 
@@ -26,13 +27,14 @@ type TextBlock = { kind: "text"; text: string };
 type Block = TextBlock | ToolBlock;
 
 type LiveMsg =
-  | { id: string; role: "user"; text: string }
+  | { id: string; role: "user"; text: string; authorEmail: string | null }
   | { id: string; role: "assistant"; blocks: Block[] };
 
 type Props = {
   claimId: string;
   claimTitle: string;
   sessionId: string;
+  currentUserEmail: string | null;
 };
 
 const SIDECAR_CONTEXT_PREAMBLE = (claimId: string, title: string) =>
@@ -42,7 +44,7 @@ function buildLiveFromDb(rows: DbMessage[]): LiveMsg[] {
   const out: LiveMsg[] = [];
   for (const r of rows) {
     if (r.role === "user") {
-      out.push({ id: r.id, role: "user", text: r.body });
+      out.push({ id: r.id, role: "user", text: r.body, authorEmail: r.userEmail });
     } else if (r.role === "assistant") {
       const blocks: Block[] = [];
       // Reconstruct tool blocks from saved tool_call_json + body chunks.
@@ -59,7 +61,7 @@ function buildLiveFromDb(rows: DbMessage[]): LiveMsg[] {
   return out;
 }
 
-export function ConversationView({ claimId, claimTitle, sessionId }: Props) {
+export function ConversationView({ claimId, claimTitle, sessionId, currentUserEmail }: Props) {
   const [messages, setMessages] = useState<LiveMsg[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
@@ -126,7 +128,7 @@ export function ConversationView({ claimId, claimTitle, sessionId }: Props) {
     const assistantId = crypto.randomUUID();
     setMessages((m) => [
       ...m,
-      { id: userId, role: "user", text },
+      { id: userId, role: "user", text, authorEmail: currentUserEmail },
       { id: assistantId, role: "assistant", blocks: [] },
     ]);
     setPending(true);
@@ -282,7 +284,9 @@ export function ConversationView({ claimId, claimTitle, sessionId }: Props) {
             {messages.map((m) => (
               <li key={m.id} className="flex flex-col gap-1">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                  {m.role === "user" ? "You" : "Claude"}
+                  {m.role === "user"
+                    ? m.authorEmail ?? "You"
+                    : "Claude"}
                 </div>
                 {m.role === "user" ? (
                   <div className="whitespace-pre-wrap rounded-md bg-subtle p-2.5 text-fg">

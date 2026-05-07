@@ -7,6 +7,7 @@ type Comment = {
   id: string;
   author: string;
   authorKind: string;
+  authorEmail?: string | null;
   body: string;
   createdAt: string;
 };
@@ -85,7 +86,7 @@ export function CommentThread({ claimId, canPost }: Props) {
           {comments.map((c) => (
             <li key={c.id} className="panel rounded-md p-3">
               <div className="mb-1 flex items-baseline justify-between text-[11px]">
-                <span className="font-medium text-fg">{c.author}</span>
+                <span className="font-medium text-fg">{c.authorEmail ?? c.author}</span>
                 <span className="font-mono text-[10px] text-muted">{fmt(c.createdAt)}</span>
               </div>
               <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-fg">

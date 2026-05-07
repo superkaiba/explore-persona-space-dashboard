@@ -20,6 +20,7 @@ export async function GET(
       author: comments.author,
       authorKind: comments.authorKind,
       authorUserId: comments.authorUserId,
+      authorEmail: comments.authorEmail,
       body: comments.body,
       createdAt: comments.createdAt,
     })
@@ -58,6 +59,7 @@ export async function POST(
       authorKind: "user",
       author,
       authorUserId: user.id,
+      authorEmail: user.email ?? null,
       body: parsed.data.body,
     })
     .returning();
