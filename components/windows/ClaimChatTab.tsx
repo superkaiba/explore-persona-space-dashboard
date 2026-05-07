@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Plus, LogIn } from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Plus, Send, Mail } from "lucide-react";
 import { ConversationView } from "@/components/discussion/ConversationView";
+import { createClient } from "@/lib/supabase/client";
 
 type Session = {
   id: string;
@@ -135,19 +135,74 @@ export function ClaimChatTab({
 }
 
 function SignInPrompt() {
+  const supabase = useMemo(() => createClient(), []);
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  async function send(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || status === "sending") return;
+    setStatus("sending");
+    setErrMsg(null);
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://dashboard.superkaiba.com";
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: `${origin}/api/auth/callback` },
+    });
+    if (error) {
+      setErrMsg(error.message);
+      setStatus("error");
+    } else {
+      setStatus("sent");
+    }
+  }
+
+  if (status === "sent") {
+    return (
+      <div className="rounded-md border border-confidence-high/30 bg-confidence-high/10 p-3 text-[12.5px]">
+        <p className="font-medium text-fg">Check your inbox at {email}</p>
+        <p className="mt-1 text-muted">
+          Click the magic link to sign in. Your open windows are saved — they'll
+          come back when you return.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-full flex-col items-start gap-3 text-[12.5px]">
+    <form onSubmit={send} className="flex flex-col gap-2 text-[12.5px]">
       <p className="text-muted">
-        Sign in with a magic link to chat with Claude about this claim and start
-        a back-and-forth thread other collaborators can join.
+        Sign in with a magic link to chat with Claude about this claim. Other
+        collaborators can join the same thread.
       </p>
-      <Link
-        href="/login"
-        className="inline-flex items-center gap-1.5 rounded-md bg-fg px-3 py-1.5 text-[12px] font-medium text-canvas transition-opacity hover:opacity-90"
+      <label className="flex flex-col gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted">
+          Email
+        </span>
+        <div className="flex items-center gap-1 rounded-md border border-border bg-panel px-2 focus-within:border-running focus-within:ring-1 focus-within:ring-running">
+          <Mail className="h-3 w-3 shrink-0 text-muted" />
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            disabled={status === "sending"}
+            className="flex-1 bg-transparent py-1.5 text-[12.5px] focus:outline-none disabled:opacity-50"
+          />
+        </div>
+      </label>
+      <button
+        type="submit"
+        disabled={status === "sending" || !email.trim()}
+        className="inline-flex items-center justify-center gap-1.5 rounded-md bg-fg px-3 py-1.5 text-[12px] font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-40"
       >
-        <LogIn className="h-3 w-3" />
-        Sign in
-      </Link>
-    </div>
+        <Send className="h-3 w-3" />
+        {status === "sending" ? "Sending…" : "Send magic link"}
+      </button>
+      {errMsg && <p className="text-[11px] text-red-600">{errMsg}</p>}
+    </form>
   );
 }

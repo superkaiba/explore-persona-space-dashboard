@@ -305,13 +305,15 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
       {previewed && (
         <EntityHoverPanel
           entity={previewed}
-          pinned={pinnedId === previewed.id}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
           onClose={closePreview}
-          onTogglePin={() =>
-            setPinnedId((prev) => (prev === previewed.id ? null : previewed.id))
-          }
+          onPromote={() => {
+            // Promote the hovered preview to a permanent draggable window.
+            openWindow(previewed.kind, previewed.id);
+            setHoveredId(null);
+            setPinnedId(null);
+          }}
         />
       )}
     </div>
