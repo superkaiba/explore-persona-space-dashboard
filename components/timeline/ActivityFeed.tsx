@@ -106,8 +106,22 @@ export function ActivityFeed({
 }
 
 function Row({ item }: { item: FeedItem }) {
-  const inner = (
-    <div className="group flex items-start gap-3 border-b border-border py-2 pr-2 transition-colors hover:bg-subtle">
+  // The row contains two distinct clickable targets (detail page + GitHub
+  // link), so we lay them out as siblings inside a non-clickable <li> to
+  // avoid nested anchors.
+  const titleNode = item.detailHref ? (
+    <Link
+      href={item.detailHref}
+      className="line-clamp-2 text-[13px] leading-snug hover:underline"
+    >
+      {item.title}
+    </Link>
+  ) : (
+    <span className="line-clamp-2 text-[13px] leading-snug">{item.title}</span>
+  );
+
+  return (
+    <li className="flex items-start gap-3 border-b border-border py-2 pr-2">
       <span className={`mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${KIND_DOT[item.kind]}`} />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 text-[10px] font-medium uppercase tracking-wider text-muted">
@@ -127,27 +141,20 @@ function Row({ item }: { item: FeedItem }) {
             {fmtTime(item.timestamp)}
           </span>
         </div>
-        <div className="mt-0.5 line-clamp-2 text-[13px] leading-snug">{item.title}</div>
-        <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted">
-          {item.githubIssueNumber != null && (
+        <div className="mt-0.5">{titleNode}</div>
+        {item.githubIssueNumber != null && (
+          <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted">
             <a
               href={`https://github.com/superkaiba/explore-persona-space/issues/${item.githubIssueNumber}`}
               target="_blank"
               rel="noopener noreferrer"
               className="font-mono hover:text-fg"
-              onClick={(e) => e.stopPropagation()}
             >
               #{item.githubIssueNumber} ↗
             </a>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-    </div>
-  );
-
-  return (
-    <li>
-      {item.detailHref ? <Link href={item.detailHref}>{inner}</Link> : inner}
     </li>
   );
 }
