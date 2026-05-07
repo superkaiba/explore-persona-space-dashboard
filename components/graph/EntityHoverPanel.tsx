@@ -68,15 +68,18 @@ export default function EntityHoverPanel({
         : KIND_DOT[entity.kind];
 
   return (
-    <div
-      ref={ref}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      className={[
-        "panel pointer-events-auto absolute right-4 top-4 z-20 flex max-h-[calc(100vh-2rem)] w-[480px] flex-col overflow-hidden rounded-xl shadow-rail transition-shadow",
-        pinned ? "ring-2 ring-running/30" : "",
-      ].join(" ")}
-    >
+    <>
+      {/* Subtle backdrop so the centered preview reads as "modal-like" */}
+      <div className="pointer-events-none fixed inset-0 z-20 bg-canvas/30" />
+      <div
+        ref={ref}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        className={[
+          "panel pointer-events-auto fixed left-1/2 top-1/2 z-20 flex max-h-[80vh] w-[min(640px,90vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl shadow-rail transition-shadow",
+          pinned ? "ring-2 ring-running/30" : "",
+        ].join(" ")}
+      >
       <header className="flex items-start gap-3 border-b border-border bg-subtle p-3">
         <div className="flex flex-col items-center gap-1">
           <span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
@@ -169,6 +172,7 @@ export default function EntityHoverPanel({
           {entity.body || "_(no body)_"}
         </ReactMarkdown>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

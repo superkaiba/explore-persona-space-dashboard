@@ -70,16 +70,20 @@ export function WindowProvider({ children }: { children: React.ReactNode }) {
           const top = Math.max(0, ...all.map((w) => w.z));
           return all.map((w) => (w.id === id ? { ...w, z: top + 1 } : w));
         }
-        // New window — stagger position based on count
+        // New window — center on viewport with a small per-window stagger
         const top = Math.max(0, ...all.map((w) => w.z));
         const offset = (all.length % 8) * STAGGER;
+        const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+        const w = Math.min(DEFAULT_W, vw - 80);
+        const h = Math.min(DEFAULT_H, vh - 80);
         const next: OpenWindow = {
           id,
           kind,
-          x: 80 + offset,
-          y: 80 + offset,
-          width: DEFAULT_W,
-          height: DEFAULT_H,
+          x: Math.max(40, Math.round((vw - w) / 2) + offset),
+          y: Math.max(40, Math.round((vh - h) / 2) + offset),
+          width: w,
+          height: h,
           z: top + 1,
         };
         return [...all, next];
