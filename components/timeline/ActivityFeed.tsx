@@ -80,7 +80,7 @@ export function ActivityFeed({
   }
 
   // Group by day
-  const groups: { day: Date; items: FeedItem[] }[] = [];
+  const groups: { day: Date | string; items: FeedItem[] }[] = [];
   for (const it of items) {
     const last = groups[groups.length - 1];
     if (last && isSameDay(last.day, it.timestamp)) last.items.push(it);
