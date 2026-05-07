@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import Link from "next/link";
+import { Plus, LogIn } from "lucide-react";
 import { ConversationView } from "@/components/discussion/ConversationView";
 
 type Session = {
@@ -81,7 +82,7 @@ export function ClaimChatTab({
       <div className="flex shrink-0 items-center gap-1 border-b border-border bg-subtle/30 px-4 py-2 text-[11px]">
         {!loaded ? (
           <span className="text-muted">Loading…</span>
-        ) : (
+        ) : currentUserEmail ? (
           <>
             <select
               value={activeSid ?? ""}
@@ -100,22 +101,22 @@ export function ClaimChatTab({
             <button
               type="button"
               onClick={startNew}
-              disabled={creating || !currentUserEmail}
-              title={
-                currentUserEmail
-                  ? "Start a new conversation"
-                  : "Sign in to start a conversation"
-              }
+              disabled={creating}
+              title="Start a new conversation"
               className="ml-auto inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-0.5 text-muted transition-colors hover:bg-border hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Plus className="h-3 w-3" />
               {creating ? "Starting…" : "New"}
             </button>
           </>
+        ) : (
+          <span className="text-muted">Read-only — sign in to chat</span>
         )}
       </div>
       <div className="flex-1 overflow-hidden p-5">
-        {activeSid ? (
+        {!currentUserEmail ? (
+          <SignInPrompt />
+        ) : activeSid ? (
           <ConversationView
             key={activeSid}
             claimId={claimId}
@@ -125,12 +126,28 @@ export function ClaimChatTab({
           />
         ) : (
           <p className="text-[12px] text-muted">
-            {currentUserEmail
-              ? "No conversations yet. Click + New to start one."
-              : "Sign in to start a conversation."}
+            No conversations yet. Click <strong>+ New</strong> above to start one.
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function SignInPrompt() {
+  return (
+    <div className="flex h-full flex-col items-start gap-3 text-[12.5px]">
+      <p className="text-muted">
+        Sign in with a magic link to chat with Claude about this claim and start
+        a back-and-forth thread other collaborators can join.
+      </p>
+      <Link
+        href="/login"
+        className="inline-flex items-center gap-1.5 rounded-md bg-fg px-3 py-1.5 text-[12px] font-medium text-canvas transition-opacity hover:opacity-90"
+      >
+        <LogIn className="h-3 w-3" />
+        Sign in
+      </Link>
     </div>
   );
 }

@@ -29,8 +29,8 @@ type Ctx = {
 const C = createContext<Ctx | null>(null);
 
 const STORAGE_KEY = "eps-open-windows";
-const DEFAULT_W = 720;
-const DEFAULT_H = 560;
+const DEFAULT_W = 1000;
+const DEFAULT_H = 640;
 const STAGGER = 28;
 
 export function WindowProvider({ children }: { children: React.ReactNode }) {

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ExternalLink, Maximize2, Sparkles, FileText } from "lucide-react";
+import { ExternalLink, Maximize2, Sparkles } from "lucide-react";
 import type { WindowKind } from "./WindowProvider";
 import { ClaimChatTab } from "./ClaimChatTab";
 import { IssueRef, linkifyIssueRefs } from "@/components/IssueRef";
@@ -53,7 +53,6 @@ export function EntityWindowContent({
 }) {
   const [entity, setEntity] = useState<EntityFull | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"body" | "chat">("body");
 
   useEffect(() => {
     let cancelled = false;
@@ -130,89 +129,68 @@ export function EntityWindowContent({
           </div>
         </div>
         <h1 className="mt-2 text-[15px] font-semibold leading-tight">{entity.title}</h1>
-
-        {isClaim && (
-          <div className="mt-3 flex gap-1 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setTab("body")}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors ${
-                tab === "body"
-                  ? "bg-fg text-canvas"
-                  : "text-muted hover:bg-subtle hover:text-fg"
-              }`}
-            >
-              <FileText className="h-3 w-3" />
-              Body
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab("chat")}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-colors ${
-                tab === "chat"
-                  ? "bg-fg text-canvas"
-                  : "text-muted hover:bg-subtle hover:text-fg"
-              }`}
-            >
-              <Sparkles className="h-3 w-3" />
-              Chat
-            </button>
-          </div>
-        )}
       </header>
 
-      <div className="flex-1 overflow-hidden">
-        {isClaim && tab === "chat" ? (
-          <ClaimChatTab
-            claimId={entity.id}
-            claimTitle={entity.title}
-            currentUserEmail={currentUserEmail}
-          />
-        ) : (
-          <div className="h-full overflow-y-auto p-6">
-            {entity.hero && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={entity.hero.url}
-                alt={entity.hero.caption ?? "hero"}
-                className="mb-5 w-full rounded-md border border-border"
-              />
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-6">
+          {entity.hero && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={entity.hero.url}
+              alt={entity.hero.caption ?? "hero"}
+              className="mb-5 w-full rounded-md border border-border"
+            />
+          )}
+          <div className="prose-tight text-[12.5px]">
+            {entity.body ? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a: ({ href, children }) => {
+                    if (typeof href === "string" && href.startsWith("issue:")) {
+                      const n = parseInt(href.slice(6), 10);
+                      if (!Number.isNaN(n)) return <IssueRef num={n}>{children}</IssueRef>;
+                    }
+                    return (
+                      <a href={href} target="_blank" rel="noopener noreferrer">
+                        {children}
+                      </a>
+                    );
+                  },
+                  table: ({ children }) => (
+                    <div className="overflow-x-auto">
+                      <table>{children}</table>
+                    </div>
+                  ),
+                  // eslint-disable-next-line @next/next/no-img-element
+                  img: ({ src, alt }) =>
+                    src ? <img src={typeof src === "string" ? src : ""} alt={alt ?? ""} loading="lazy" /> : null,
+                }}
+              >
+                {linkifyIssueRefs(entity.body)}
+              </ReactMarkdown>
+            ) : (
+              <p className="italic text-muted">
+                No body{ghHref ? <> — see GitHub issue.</> : "."}
+              </p>
             )}
-            <div className="prose-tight text-[12.5px]">
-              {entity.body ? (
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    a: ({ href, children }) => {
-                      if (typeof href === "string" && href.startsWith("issue:")) {
-                        const n = parseInt(href.slice(6), 10);
-                        if (!Number.isNaN(n)) return <IssueRef num={n}>{children}</IssueRef>;
-                      }
-                      return (
-                        <a href={href} target="_blank" rel="noopener noreferrer">
-                          {children}
-                        </a>
-                      );
-                    },
-                    table: ({ children }) => (
-                      <div className="overflow-x-auto">
-                        <table>{children}</table>
-                      </div>
-                    ),
-                    // eslint-disable-next-line @next/next/no-img-element
-                    img: ({ src, alt }) =>
-                      src ? <img src={typeof src === "string" ? src : ""} alt={alt ?? ""} loading="lazy" /> : null,
-                  }}
-                >
-                  {linkifyIssueRefs(entity.body)}
-                </ReactMarkdown>
-              ) : (
-                <p className="italic text-muted">
-                  No body{ghHref ? <> — see GitHub issue.</> : "."}
-                </p>
-              )}
-            </div>
           </div>
+        </div>
+
+        {isClaim && (
+          <aside className="flex w-[42%] min-w-[300px] max-w-[480px] shrink-0 flex-col border-l border-border bg-subtle/20">
+            <div className="flex items-center gap-1.5 border-b border-border px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted">
+              <Sparkles className="h-3 w-3" />
+              Chat
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <ClaimChatTab
+                claimId={entity.id}
+                claimTitle={entity.title}
+                currentUserEmail={currentUserEmail}
+              />
+            </div>
+          </aside>
         )}
       </div>
     </div>
