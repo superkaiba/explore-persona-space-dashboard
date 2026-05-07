@@ -16,6 +16,7 @@ import "@xyflow/react/dist/style.css";
 import EntityNode, { type EntityNodeType, type EntityKind } from "./EntityNode";
 import { dagreLayout } from "./dagreLayout";
 import EntityHoverPanel, { type HoverEntity } from "./EntityHoverPanel";
+import { useWindows } from "@/components/windows/WindowProvider";
 
 export type GraphEntity = {
   id: string;
@@ -71,6 +72,7 @@ const KIND_LABEL: Record<EntityKind, string> = {
 
 export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProps) {
   const router = useRouter();
+  const { open: openWindow } = useWindows();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [enabledKinds, setEnabledKinds] = useState<Set<EntityKind>>(new Set(ALL_KINDS));
@@ -169,12 +171,14 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
     [scheduleClose],
   );
 
-  // Click toggles pin. Shift-click navigates to detail page (claims only).
+  // Click opens a draggable window for claims (or jumps to GH for non-claims).
+  // Shift-click on a claim navigates to the full /claim/[id] page.
   const onNodeClick: NodeMouseHandler<EntityNodeType> = useCallback(
     (e, node) => {
       const ent = entityById.get(node.id);
       if (!ent) return;
-      if (e.shiftKey || (e as unknown as MouseEvent).metaKey || (e as unknown as MouseEvent).ctrlKey) {
+      const me = e as unknown as MouseEvent;
+      if (e.shiftKey || me.metaKey || me.ctrlKey) {
         if (ent.kind === "claim") router.push(`/claim/${node.id}`);
         else if (ent.githubIssueNumber != null) {
           window.open(
@@ -184,11 +188,16 @@ export default function ClaimGraph({ entities, edges: rawEdges }: ClaimGraphProp
         }
         return;
       }
-      // Toggle pin
-      setPinnedId((prev) => (prev === node.id ? null : node.id));
-      setHoveredId(node.id);
+      if (ent.kind === "claim") {
+        openWindow("claim", node.id);
+      } else if (ent.githubIssueNumber != null) {
+        window.open(
+          `https://github.com/superkaiba/explore-persona-space/issues/${ent.githubIssueNumber}`,
+          "_blank",
+        );
+      }
     },
-    [entityById, router],
+    [entityById, router, openWindow],
   );
 
   const closePreview = useCallback(() => {
