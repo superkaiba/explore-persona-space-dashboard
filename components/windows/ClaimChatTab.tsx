@@ -164,8 +164,8 @@ function SignInPrompt() {
       <div className="rounded-md border border-confidence-high/30 bg-confidence-high/10 p-3 text-[12.5px]">
         <p className="font-medium text-fg">Check your inbox at {email}</p>
         <p className="mt-1 text-muted">
-          Click the magic link to sign in. Your open windows are saved — they'll
-          come back when you return.
+          Click the magic link to sign in. Your open windows are saved and
+          will come back when you return.
         </p>
       </div>
     );

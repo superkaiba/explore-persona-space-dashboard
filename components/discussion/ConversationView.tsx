@@ -26,9 +26,17 @@ type ToolBlock = {
 type TextBlock = { kind: "text"; text: string };
 type Block = TextBlock | ToolBlock;
 
+type StartupPhase = "spawning" | "loading" | "ready" | null;
+
 type LiveMsg =
   | { id: string; role: "user"; text: string; authorEmail: string | null }
-  | { id: string; role: "assistant"; blocks: Block[] };
+  | {
+      id: string;
+      role: "assistant";
+      blocks: Block[];
+      startupPhase?: StartupPhase;
+      startedAt?: number;
+    };
 
 type Props = {
   claimId: string;
@@ -126,10 +134,17 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
 
     const userId = crypto.randomUUID();
     const assistantId = crypto.randomUUID();
+    const isFirstTurn = messages.filter((m) => m.role === "assistant").length === 0;
     setMessages((m) => [
       ...m,
       { id: userId, role: "user", text, authorEmail: currentUserEmail },
-      { id: assistantId, role: "assistant", blocks: [] },
+      {
+        id: assistantId,
+        role: "assistant",
+        blocks: [],
+        startupPhase: isFirstTurn ? "spawning" : null,
+        startedAt: Date.now(),
+      },
     ]);
     setPending(true);
 
@@ -213,7 +228,22 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
           } catch {
             continue;
           }
-          if (eventName === "token") {
+          if (eventName === "starting") {
+            const phase = (data.phase as string) ?? "spawning";
+            if (phase === "warm") {
+              updateAssistant((m) => {
+                m.startupPhase = null;
+              });
+            } else {
+              updateAssistant((m) => {
+                m.startupPhase = (phase as StartupPhase) ?? "spawning";
+              });
+            }
+          } else if (eventName === "ready") {
+            updateAssistant((m) => {
+              m.startupPhase = "ready";
+            });
+          } else if (eventName === "token") {
             const t = (data.text as string) ?? "";
             updateAssistant((m) => {
               const last = m.blocks[m.blocks.length - 1];
@@ -294,9 +324,16 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {m.blocks.length === 0 && (
-                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-muted" />
+                    {m.startupPhase && m.startupPhase !== "ready" && m.blocks.length === 0 && (
+                      <StartupPill
+                        phase={m.startupPhase}
+                        startedAt={m.startedAt ?? Date.now()}
+                      />
                     )}
+                    {m.blocks.length === 0 &&
+                      (!m.startupPhase || m.startupPhase === "ready") && (
+                        <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-muted" />
+                      )}
                     {m.blocks.map((block, i) =>
                       block.kind === "text" ? (
                         <div key={i} className="prose-tight text-fg">
@@ -340,6 +377,23 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
           <Send className="h-3.5 w-3.5" />
         </button>
       </form>
+    </div>
+  );
+}
+
+function StartupPill({ phase, startedAt }: { phase: StartupPhase; startedAt: number }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setElapsed((Date.now() - startedAt) / 1000), 100);
+    return () => clearInterval(id);
+  }, [startedAt]);
+  const label =
+    phase === "spawning" ? "Spawning agent…" : "Loading tools, MCP servers, memory…";
+  return (
+    <div className="inline-flex items-center gap-2 self-start rounded-md border border-border bg-subtle px-2 py-1 text-[11px] text-muted">
+      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-running" />
+      <span>{label}</span>
+      <span className="font-mono text-[10px]">{elapsed.toFixed(1)}s</span>
     </div>
   );
 }

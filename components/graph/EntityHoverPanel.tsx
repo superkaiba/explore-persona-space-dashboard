@@ -71,7 +71,7 @@ export default function EntityHoverPanel({
 
   return (
     <>
-      <div className="pointer-events-none fixed inset-0 z-20 bg-canvas/30" />
+      <div className="pointer-events-none fixed inset-0 z-40 bg-canvas/30" />
       <div
         ref={ref}
         onMouseEnter={onMouseEnter}
@@ -85,7 +85,7 @@ export default function EntityHoverPanel({
             onPromote();
           }
         }}
-        className="panel pointer-events-auto fixed left-1/2 top-1/2 z-20 flex max-h-[80vh] w-[min(640px,90vw)] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex-col overflow-hidden rounded-xl shadow-rail transition-shadow hover:ring-2 hover:ring-running/40"
+        className="panel pointer-events-auto fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-[min(640px,90vw)] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex-col overflow-hidden rounded-xl shadow-rail transition-shadow hover:ring-2 hover:ring-running/40"
       >
         <header className="flex items-start gap-3 border-b border-border bg-subtle p-3">
           <div className="flex flex-col items-center gap-1">
