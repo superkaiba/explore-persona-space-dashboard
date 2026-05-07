@@ -57,7 +57,7 @@ export default async function WeekPage() {
       githubIssueNumber: c.githubIssueNumber,
       timestamp: c.updatedAt,
       detailHref: `/claim/${c.id}`,
-      verb: c.createdAt.getTime() === c.updatedAt.getTime() ? "created" : "updated",
+      verb: new Date(c.createdAt).getTime() === new Date(c.updatedAt).getTime() ? "created" : "updated",
     })),
     ...expRows.map((e): FeedItem => ({
       id: `exp-${e.id}`,
@@ -66,7 +66,7 @@ export default async function WeekPage() {
       status: e.status,
       githubIssueNumber: e.githubIssueNumber,
       timestamp: e.updatedAt,
-      verb: e.createdAt.getTime() === e.updatedAt.getTime() ? "started" : "advanced",
+      verb: new Date(e.createdAt).getTime() === new Date(e.updatedAt).getTime() ? "started" : "advanced",
     })),
     ...todoRows.map((t): FeedItem => ({
       id: `todo-${t.id}`,
@@ -76,7 +76,7 @@ export default async function WeekPage() {
       timestamp: t.createdAt,
       verb: "filed",
     })),
-  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   return (
     <div className="h-full overflow-y-auto">

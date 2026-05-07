@@ -7,7 +7,7 @@ export type FeedItem = {
   confidence?: "HIGH" | "MODERATE" | "LOW" | null;
   status?: string | null;
   githubIssueNumber: number | null;
-  timestamp: Date;
+  timestamp: Date | string;
   detailHref?: string;
   verb: string;
 };
@@ -26,27 +26,33 @@ const KIND_LABEL: Record<FeedItem["kind"], string> = {
   untriaged: "untriaged",
 };
 
-function fmtTime(d: Date): string {
-  return d.toLocaleString(undefined, {
+function asDate(v: Date | string): Date {
+  return v instanceof Date ? v : new Date(v);
+}
+
+function fmtTime(v: Date | string): string {
+  return asDate(v).toLocaleString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
 }
 
-function fmtDay(d: Date): string {
-  return d.toLocaleDateString(undefined, {
+function fmtDay(v: Date | string): string {
+  return asDate(v).toLocaleDateString(undefined, {
     weekday: "long",
     month: "short",
     day: "numeric",
   });
 }
 
-function isSameDay(a: Date, b: Date): boolean {
+function isSameDay(a: Date | string, b: Date | string): boolean {
+  const da = asDate(a);
+  const db = asDate(b);
   return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
   );
 }
 
@@ -84,7 +90,7 @@ export function ActivityFeed({
   return (
     <div className="flex flex-col gap-4">
       {groups.map((g) => (
-        <section key={g.day.toISOString()}>
+        <section key={asDate(g.day).toISOString()}>
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted">
             {fmtDay(g.day)}
           </h2>
