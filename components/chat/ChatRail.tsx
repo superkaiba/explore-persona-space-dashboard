@@ -137,11 +137,13 @@ export function ChatRail() {
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
-        const events = buf.split("\n\n");
+        // sse-starlette emits CRLF line endings; SSE spec allows LF or CRLF.
+        // Match both.
+        const events = buf.split(/\r?\n\r?\n/);
         buf = events.pop() ?? "";
         for (const ev of events) {
           if (!ev.trim()) continue;
-          const lines = ev.split("\n");
+          const lines = ev.split(/\r?\n/);
           let eventName = "message";
           let dataStr = "";
           for (const line of lines) {
