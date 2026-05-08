@@ -12,16 +12,16 @@ export default async function MentorWeeklyUpdatePage() {
   const recentStart = addDays(weekStart, -7 * (RECENT_WEEKS - 1));
 
   const results = (await getMentorKanbanCleanResults()).filter(
-    (result) => asDate(result.createdAt).getTime() >= recentStart.getTime(),
+    (result) => asDate(result.updatedAt).getTime() >= recentStart.getTime(),
   );
 
   return (
     <WeeklyCleanResultsUpdate
-      week={results.filter((result) => asDate(result.createdAt).getTime() >= weekStart.getTime())}
-      recent={results.filter((result) => asDate(result.createdAt).getTime() < weekStart.getTime())}
+      week={results.filter((result) => asDate(result.updatedAt).getTime() >= weekStart.getTime())}
+      recent={results.filter((result) => asDate(result.updatedAt).getTime() < weekStart.getTime())}
       generatedAt={now}
       weekStart={weekStart}
-      dateField="createdAt"
+      dateField="updatedAt"
       dayPath="/mentor/updates"
     />
   );

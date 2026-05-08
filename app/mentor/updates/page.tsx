@@ -11,7 +11,8 @@ export default async function MentorDailyUpdatePage() {
     <CleanResultsLogUpdate
       results={allResults}
       generatedAt={now}
-      dateField="createdAt"
+      dateField="updatedAt"
+      description="GitHub Useful and Not useful columns. Useful items are logged as done on Thu, May 7."
       weekPath="/mentor/updates/week"
       showWeeklyLink={false}
       showInternalLink={false}

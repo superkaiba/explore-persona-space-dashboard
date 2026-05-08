@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  isValidElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
   Maximize2,
+  MessageSquare,
   X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -172,6 +181,41 @@ function ResultDetailOverlay({
 }) {
   const markdown = result.body || result.excerpt || "No result body is available.";
   const askPayload = useMemo(() => resultAskPayload(result), [result]);
+  const commentsRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const canComment = isUuid(result.id);
+  const headings = useMemo(() => extractMarkdownHeadings(markdown), [markdown]);
+  const headingRenderCounts = new Map<string, number>();
+
+  function scrollContentToId(id: string) {
+    const container = contentRef.current;
+    if (!container) return;
+    if (!id) {
+      container.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    const decodedId = decodeFragment(id);
+    const candidateIds =
+      decodedId.startsWith("user-content-")
+        ? [decodedId, decodedId.replace(/^user-content-/, "")]
+        : [decodedId];
+    const target = Array.from(container.querySelectorAll<HTMLElement>("[id]")).find(
+      (element) => candidateIds.includes(element.id),
+    );
+    if (!target) return;
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    container.scrollTo({
+      top: container.scrollTop + targetRect.top - containerRect.top - 14,
+      behavior: "smooth",
+    });
+  }
+
+  function handleAnchorClick(event: MouseEvent<HTMLAnchorElement>, href?: string) {
+    if (!href?.startsWith("#")) return;
+    event.preventDefault();
+    scrollContentToId(href.slice(1));
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -183,14 +227,23 @@ function ResultDetailOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-3"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-2 md:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby={`result-${result.id}-title`}
       onClick={onClose}
     >
       <div
-        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-rail"
+        className="flex flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-rail"
+        style={{
+          width: "min(1400px, calc(100vw - 1rem))",
+          height: "min(900px, calc(100dvh - 1rem))",
+          minWidth: "min(720px, calc(100vw - 1rem))",
+          minHeight: "min(520px, calc(100dvh - 1rem))",
+          maxWidth: "calc(100vw - 1rem)",
+          maxHeight: "calc(100dvh - 1rem)",
+          resize: "both",
+        }}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex items-start gap-3 border-b border-border px-4 py-3">
@@ -210,6 +263,16 @@ function ResultDetailOverlay({
             </h2>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {canComment && (
+              <button
+                type="button"
+                onClick={() => commentsRef.current?.scrollIntoView({ block: "start" })}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-subtle px-2.5 py-1.5 text-[12px] text-fg hover:bg-raised"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Comments
+              </button>
+            )}
             <ClaudeAskButton payload={askPayload} label="Ask Claude Code" />
             <button
               type="button"
@@ -222,45 +285,96 @@ function ResultDetailOverlay({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <ClaudeAskComposer
-            payload={askPayload}
-            placeholder="Ask Claude Code to inspect this result..."
-            className="mb-4 bg-subtle/30"
-          />
-          <div className="prose prose-sm max-w-none prose-headings:text-fg prose-p:text-fg-soft prose-strong:text-fg prose-code:text-fg prose-pre:border prose-pre:border-border prose-pre:bg-subtle prose-li:text-fg-soft prose-a:text-accent">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent hover:underline"
-                  >
-                    {children}
-                  </a>
-                ),
-              }}
-            >
-              {markdown}
-            </ReactMarkdown>
-          </div>
-          {isUuid(result.id) && (
-            <section className="mt-5 border-t border-border pt-4">
-              <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-fg">
-                Comments
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <div
+            className={cn(
+              "grid h-full min-h-0 overflow-y-auto lg:overflow-hidden",
+              canComment
+                ? "lg:grid-cols-[220px_minmax(0,1fr)_340px]"
+                : "lg:grid-cols-[220px_minmax(0,1fr)]",
+            )}
+          >
+            <aside className="hidden min-h-0 overflow-y-auto border-r border-border bg-subtle/20 px-3 py-4 lg:block">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                Contents
               </div>
-              <CommentThread
-                claimId={result.id}
-                claimTitle={result.title}
-                canPost
-                publicPost
-                canAskClaude
+              <nav className="flex flex-col gap-0.5" aria-label="Result contents">
+                <button
+                  type="button"
+                  onClick={() => scrollContentToId("")}
+                  className="rounded-md px-2 py-1.5 text-left text-[12px] font-medium text-fg hover:bg-raised"
+                >
+                  Top
+                </button>
+                {headings.length === 0 ? (
+                  <div className="px-2 py-1.5 text-[12px] text-muted">No sections</div>
+                ) : (
+                  headings.map((heading) => (
+                    <button
+                      key={`${heading.id}-${heading.index}`}
+                      type="button"
+                      onClick={() => scrollContentToId(heading.id)}
+                      className="rounded-md py-1.5 pr-2 text-left text-[12px] leading-snug text-muted hover:bg-raised hover:text-fg"
+                      style={{ paddingLeft: `${Math.min(heading.depth - 1, 3) * 10 + 8}px` }}
+                    >
+                      <span className="line-clamp-2">{heading.text}</span>
+                    </button>
+                  ))
+                )}
+              </nav>
+            </aside>
+            <div ref={contentRef} className="min-h-0 px-4 py-4 lg:overflow-y-auto">
+              <ClaudeAskComposer
+                payload={askPayload}
+                placeholder="Ask Claude Code to inspect this result..."
+                className="mb-4 bg-subtle/30"
               />
-            </section>
-          )}
+              <div className="prose prose-sm max-w-none prose-headings:text-fg prose-p:text-fg-soft prose-strong:text-fg prose-code:text-fg prose-pre:border prose-pre:border-border prose-pre:bg-subtle prose-li:text-fg-soft prose-a:text-accent">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ href, children }) => (
+                      <a
+                        href={href}
+                        onClick={(event) => handleAnchorClick(event, href)}
+                        target={href?.startsWith("#") ? undefined : "_blank"}
+                        rel={href?.startsWith("#") ? undefined : "noopener noreferrer"}
+                        className="text-accent hover:underline"
+                      >
+                        {children}
+                      </a>
+                    ),
+                    h1: ({ children }) => renderMarkdownHeading(1, children, headingRenderCounts),
+                    h2: ({ children }) => renderMarkdownHeading(2, children, headingRenderCounts),
+                    h3: ({ children }) => renderMarkdownHeading(3, children, headingRenderCounts),
+                    h4: ({ children }) => renderMarkdownHeading(4, children, headingRenderCounts),
+                    h5: ({ children }) => renderMarkdownHeading(5, children, headingRenderCounts),
+                    h6: ({ children }) => renderMarkdownHeading(6, children, headingRenderCounts),
+                  }}
+                >
+                  {markdown}
+                </ReactMarkdown>
+              </div>
+            </div>
+            {canComment && (
+              <section
+                ref={commentsRef}
+                className="min-h-[320px] border-t border-border bg-subtle/20 px-4 py-4 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0"
+              >
+                <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-fg">
+                  <MessageSquare className="h-4 w-4 text-muted" />
+                  Comments
+                </div>
+                <CommentThread
+                  claimId={result.id}
+                  claimTitle={result.title}
+                  canPost
+                  publicPost
+                  canAskClaude
+                />
+              </section>
+            )}
+          </div>
         </div>
 
         {internal && (
@@ -348,6 +462,94 @@ function resultAskPayload(result: CleanResult): ClaudeAskPayload {
     contextMd: resultContext(result),
     suggestedQuestion: "Inspect this result and explain what it means.",
   };
+}
+
+type MarkdownHeading = {
+  id: string;
+  text: string;
+  depth: number;
+  index: number;
+};
+
+function extractMarkdownHeadings(markdown: string): MarkdownHeading[] {
+  const counts = new Map<string, number>();
+  const headings: MarkdownHeading[] = [];
+  const pattern = /^(#{1,6})\s+(.+?)\s*#*\s*$/gm;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(markdown))) {
+    const text = plainMarkdownText(match[2]);
+    if (!text) continue;
+    const baseId = githubLikeSlug(text);
+    const id = dedupeSlug(baseId, counts);
+    headings.push({
+      id,
+      text,
+      depth: match[1].length,
+      index: headings.length,
+    });
+  }
+
+  return headings;
+}
+
+function renderMarkdownHeading(
+  depth: 1 | 2 | 3 | 4 | 5 | 6,
+  children: ReactNode,
+  counts: Map<string, number>,
+) {
+  const text = nodeText(children);
+  const id = dedupeSlug(githubLikeSlug(text), counts);
+  const className = "scroll-mt-4";
+
+  if (depth === 1) return <h1 id={id} className={className}>{children}</h1>;
+  if (depth === 2) return <h2 id={id} className={className}>{children}</h2>;
+  if (depth === 3) return <h3 id={id} className={className}>{children}</h3>;
+  if (depth === 4) return <h4 id={id} className={className}>{children}</h4>;
+  if (depth === 5) return <h5 id={id} className={className}>{children}</h5>;
+  return <h6 id={id} className={className}>{children}</h6>;
+}
+
+function nodeText(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
+  return "";
+}
+
+function plainMarkdownText(value: string) {
+  return value
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[([^\]]*)]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/[*_~]/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function githubLikeSlug(value: string) {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}\s-]/gu, "")
+    .replace(/\s+/g, "-");
+  return slug || "section";
+}
+
+function dedupeSlug(baseId: string, counts: Map<string, number>) {
+  const count = counts.get(baseId) ?? 0;
+  counts.set(baseId, count + 1);
+  return count === 0 ? baseId : `${baseId}-${count}`;
+}
+
+function decodeFragment(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function resultContext(result: CleanResult) {

@@ -217,17 +217,23 @@ export function CommentThread({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={useSelection}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-[11px] text-muted hover:bg-raised hover:text-fg"
-        >
-          <Quote className="h-3.5 w-3.5" />
-          Use selected text
-        </button>
-      </div>
+      {canPost && (
+        <div className="flex items-center justify-between gap-2">
+          <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-fg">
+            <MessageSquare className="h-3.5 w-3.5 text-muted" />
+            Add comment
+          </div>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={useSelection}
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-[11px] text-muted hover:bg-raised hover:text-fg"
+          >
+            <Quote className="h-3.5 w-3.5" />
+            Target selection
+          </button>
+        </div>
+      )}
 
       {anchorText && (
         <div className="rounded-md border border-border bg-subtle/50 p-2 text-[12px] text-muted">
@@ -265,6 +271,57 @@ export function CommentThread({
         </p>
       )}
 
+      {canPost && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
+          }}
+          className="rounded-md border border-border bg-panel p-2.5"
+        >
+          {publicPost && (
+            <input
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+              placeholder="Name"
+              className="mb-2 w-full rounded-md border border-border bg-canvas px-2.5 py-1.5 text-[12px] text-fg placeholder:text-muted focus:border-running focus:outline-none focus:ring-1 focus:ring-running"
+            />
+          )}
+          <div className="flex items-end gap-2">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              placeholder={
+                replyTo
+                  ? "Write a reply...  (cmd/ctrl+enter to send)"
+                  : "Leave a comment...  (cmd/ctrl+enter to send)"
+              }
+              rows={3}
+              disabled={posting}
+              className="flex-1 resize-none rounded-md border border-border bg-canvas px-2.5 py-1.5 text-[13px] focus:border-running focus:outline-none focus:ring-1 focus:ring-running disabled:opacity-60"
+            />
+            <button
+              type="submit"
+              disabled={posting || !draft.trim()}
+              className="rounded-md bg-fg p-2 text-canvas disabled:opacity-30"
+              aria-label="Post comment"
+            >
+              {posting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        </form>
+      )}
+
       {!loaded ? (
         <p className="text-[12px] text-muted">Loading...</p>
       ) : comments.length === 0 ? (
@@ -287,49 +344,6 @@ export function CommentThread({
             />
           ))}
         </ul>
-      )}
-
-      {canPost && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-          className="space-y-2"
-        >
-          {publicPost && (
-            <input
-              value={author}
-              onChange={(e) => setAuthor(e.target.value)}
-              placeholder="Name"
-              className="w-full rounded-md border border-border bg-panel px-2.5 py-1.5 text-[12px] text-fg placeholder:text-muted focus:border-running focus:outline-none focus:ring-1 focus:ring-running"
-            />
-          )}
-          <div className="flex items-end gap-2">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder={replyTo ? "Write a reply...  (cmd/ctrl+enter to send)" : "Leave a comment...  (cmd/ctrl+enter to send)"}
-              rows={2}
-              disabled={posting}
-              className="flex-1 resize-none rounded-md border border-border bg-panel px-2.5 py-1.5 text-[13px] focus:border-running focus:outline-none focus:ring-1 focus:ring-running disabled:opacity-60"
-            />
-            <button
-              type="submit"
-              disabled={posting || !draft.trim()}
-              className="rounded-md bg-fg p-2 text-canvas disabled:opacity-30"
-              aria-label="Post comment"
-            >
-              {posting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-        </form>
       )}
     </div>
   );

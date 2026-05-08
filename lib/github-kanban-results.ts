@@ -12,6 +12,8 @@ const PROJECT_URL =
   process.env.GITHUB_RESULTS_PROJECT_URL ?? "https://github.com/users/superkaiba/projects/1";
 const REPO_PATH =
   process.env.GITHUB_RESULTS_REPO ?? "superkaiba/explore-persona-space";
+const CURRENT_USEFUL_DONE_DAY =
+  process.env.GITHUB_RESULTS_USEFUL_DONE_DAY ?? "2026-05-07";
 
 type GitHubKanbanResultIssue = {
   number: number;
@@ -92,6 +94,7 @@ export async function getMentorKanbanCleanResults(): Promise<CleanResult[]> {
       ...claim,
       title: issue.title || claim.title,
       createdAt: issue.createdAt,
+      updatedAt: resultDoneAt(issue),
     });
 
     return {
@@ -99,6 +102,7 @@ export async function getMentorKanbanCleanResults(): Promise<CleanResult[]> {
       title: issue.title || result.title,
       useful: issue.useful,
       createdAt: issue.createdAt,
+      updatedAt: resultDoneAt(issue),
     };
   });
 }
@@ -228,9 +232,25 @@ function cleanResultFromKanbanIssue(issue: GitHubKanbanResultIssue): CleanResult
     useful: issue.useful,
     githubIssueNumber: issue.number,
     createdAt: issue.createdAt,
-    updatedAt: issue.updatedAt,
+    updatedAt: resultDoneAt(issue),
     href: issue.url,
   };
+}
+
+function resultDoneAt(issue: GitHubKanbanResultIssue) {
+  if (!issue.useful) return issue.updatedAt;
+  return withDayPreservingUtcTime(issue.createdAt, CURRENT_USEFUL_DONE_DAY);
+}
+
+function withDayPreservingUtcTime(value: string, day: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return `${day}T12:00:00.000Z`;
+  const time = [
+    String(date.getUTCHours()).padStart(2, "0"),
+    String(date.getUTCMinutes()).padStart(2, "0"),
+    String(date.getUTCSeconds()).padStart(2, "0"),
+  ].join(":");
+  return `${day}T${time}.${String(date.getUTCMilliseconds()).padStart(3, "0")}Z`;
 }
 
 function stableIssueCommentId(issueNumber: number) {

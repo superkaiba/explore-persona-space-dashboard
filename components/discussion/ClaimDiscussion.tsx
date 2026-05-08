@@ -46,7 +46,7 @@ export function ClaimDiscussion({
   publicCommenting = false,
   currentUserEmail,
 }: Props) {
-  const [tab, setTab] = useState<Tab>("conversations");
+  const [tab, setTab] = useState<Tab>("comments");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [openSid, setOpenSid] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);

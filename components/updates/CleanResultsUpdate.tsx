@@ -144,6 +144,7 @@ export function CleanResultsLogUpdate({
   showWeeklyLink = true,
   showInternalLink = true,
   dateField = "updatedAt",
+  description,
 }: {
   results: CleanResult[];
   generatedAt: Date;
@@ -152,6 +153,7 @@ export function CleanResultsLogUpdate({
   showWeeklyLink?: boolean;
   showInternalLink?: boolean;
   dateField?: CleanResultDateField;
+  description?: string;
 }) {
   const sortedResults = results
     .slice()
@@ -168,9 +170,10 @@ export function CleanResultsLogUpdate({
               Results log
             </h1>
             <p className="mt-1 text-[12px] text-muted">
-              {dateField === "createdAt"
-                ? "GitHub Useful and Not useful columns, newest issue creation first."
-                : "Clean results, most recent first."}
+              {description ??
+                (dateField === "createdAt"
+                  ? "GitHub Useful and Not useful columns, newest issue creation first."
+                  : "Clean results, most recent first.")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
