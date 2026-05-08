@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getDb } from "@/db/client";
 import { comments } from "@/db/schema";
+import { formatCommentBody } from "@/lib/comment-format";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,8 @@ export async function GET(
 
 const Body = z.object({
   body: z.string().min(1).max(8000),
+  anchorText: z.string().trim().max(2000).optional(),
+  parentCommentId: z.string().trim().max(80).optional(),
 });
 
 export async function POST(
@@ -60,7 +63,11 @@ export async function POST(
       author,
       authorUserId: user.id,
       authorEmail: user.email ?? null,
-      body: parsed.data.body,
+      body: formatCommentBody({
+        body: parsed.data.body,
+        anchorText: parsed.data.anchorText,
+        parentCommentId: parsed.data.parentCommentId,
+      }),
     })
     .returning();
   return NextResponse.json({ comment: row });

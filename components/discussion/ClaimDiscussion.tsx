@@ -25,6 +25,7 @@ type Props = {
   claimTitle: string;
   canChat: boolean;
   canPostComments: boolean;
+  publicCommenting?: boolean;
   currentUserEmail: string | null;
 };
 
@@ -42,6 +43,7 @@ export function ClaimDiscussion({
   claimTitle,
   canChat,
   canPostComments,
+  publicCommenting = false,
   currentUserEmail,
 }: Props) {
   const [tab, setTab] = useState<Tab>("conversations");
@@ -123,7 +125,13 @@ export function ClaimDiscussion({
       </div>
 
       {tab === "comments" ? (
-        <CommentThread claimId={claimId} canPost={canPostComments} />
+        <CommentThread
+          claimId={claimId}
+          claimTitle={claimTitle}
+          canPost={canPostComments}
+          publicPost={publicCommenting}
+          canAskClaude={canChat}
+        />
       ) : openSid ? (
         <div>
           <button

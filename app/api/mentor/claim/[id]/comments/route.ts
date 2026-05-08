@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db/client";
 import { comments } from "@/db/schema";
+import { formatCommentBody } from "@/lib/comment-format";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,14 +11,9 @@ const Body = z.object({
   author: z.string().trim().max(80).optional(),
   body: z.string().trim().min(1).max(8000),
   anchorText: z.string().trim().max(2000).optional(),
+  parentCommentId: z.string().trim().max(80).optional(),
   website: z.string().trim().max(0).optional(),
 });
-
-function formatBody(body: string, anchorText?: string) {
-  const anchor = anchorText?.replace(/\s+/g, " ").trim();
-  if (!anchor) return body;
-  return [`Comment on:`, `> ${anchor}`, "", body].join("\n");
-}
 
 export async function POST(
   req: NextRequest,
@@ -39,7 +35,11 @@ export async function POST(
       authorKind: "mentor",
       author,
       authorEmail: null,
-      body: formatBody(parsed.data.body, parsed.data.anchorText),
+      body: formatCommentBody({
+        body: parsed.data.body,
+        anchorText: parsed.data.anchorText,
+        parentCommentId: parsed.data.parentCommentId,
+      }),
     })
     .returning();
 

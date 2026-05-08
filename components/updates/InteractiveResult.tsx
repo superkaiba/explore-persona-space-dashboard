@@ -6,11 +6,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
-  Loader2,
   Maximize2,
-  MessageSquare,
-  Quote,
-  Send,
   X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -28,6 +24,7 @@ import {
   dispatchClaudeHover,
   type ClaudeAskPayload,
 } from "@/components/updates/MentorClaudePanel";
+import { CommentThread } from "@/components/discussion/CommentThread";
 import { cn } from "@/lib/utils";
 
 export function InteractiveResultCard({
@@ -250,7 +247,20 @@ function ResultDetailOverlay({
               {markdown}
             </ReactMarkdown>
           </div>
-          <MentorResultComments resultId={result.id} />
+          {isUuid(result.id) && (
+            <section className="mt-5 border-t border-border pt-4">
+              <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-fg">
+                Comments
+              </div>
+              <CommentThread
+                claimId={result.id}
+                claimTitle={result.title}
+                canPost
+                publicPost
+                canAskClaude
+              />
+            </section>
+          )}
         </div>
 
         {internal && (
@@ -344,10 +354,13 @@ function resultContext(result: CleanResult) {
   const resultUrl = result.href.startsWith("http")
     ? result.href
     : `https://dashboard.superkaiba.com${result.href}`;
+  const inspectionHint = result.href.startsWith("http")
+    ? "Inspect the full GitHub issue body and linked artifacts before answering. Use curl/git/shell tools to inspect or download referenced artifacts."
+    : "Inspect the full result yourself before answering. Use psql against $DASHBOARD_DATABASE_URL to fetch claim.body_json and comments for this claim id, and use curl/git/shell tools to inspect or download referenced artifacts.";
   return [
     "Claude Code inspection target:",
     `Title: ${result.title}`,
-    `Claim ID: ${result.id}`,
+    `Result ID: ${result.id}`,
     `Classification: ${result.useful ? "useful" : "not useful"}`,
     `Confidence: ${result.confidence ?? "not set"}`,
     `GitHub issue created: ${dayKey(result.createdAt)} ${formatTime(result.createdAt)}`,
@@ -357,7 +370,7 @@ function resultContext(result: CleanResult) {
       ? null
       : `GitHub issue: https://github.com/superkaiba/explore-persona-space/issues/${result.githubIssueNumber}`,
     "",
-    "Inspect the full result yourself before answering. Use psql against $DASHBOARD_DATABASE_URL to fetch claim.body_json and comments for this claim id, and use curl/git/shell tools to inspect or download referenced artifacts.",
+    inspectionHint,
     "",
     "Full result:",
     "Not included in this prompt; fetch it from the dashboard database or linked artifacts when needed.",
@@ -369,205 +382,8 @@ function resultContext(result: CleanResult) {
     .join("\n");
 }
 
-type MentorComment = {
-  id: string;
-  author: string;
-  authorKind: string;
-  authorEmail?: string | null;
-  body: string;
-  createdAt: string;
-};
-
-function formatCommentDate(value: string) {
-  return new Date(value).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-function parseComment(body: string) {
-  const match = body.match(/^Comment on:\n> ([^\n]+)\n\n([\s\S]*)$/);
-  return match ? { anchorText: match[1], text: match[2] } : { text: body };
-}
-
-function MentorResultComments({ resultId }: { resultId: string }) {
-  const [comments, setComments] = useState<MentorComment[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [posting, setPosting] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [author, setAuthor] = useState("");
-  const [anchorText, setAnchorText] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setAuthor(window.localStorage.getItem("eps-mentor-comment-author") ?? "");
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoaded(false);
-    setError(null);
-    fetch(`/api/claim/${resultId}/comments`)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(await res.text());
-        return (await res.json()) as { comments: MentorComment[] };
-      })
-      .then((data) => {
-        if (!cancelled) setComments(data.comments);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoaded(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [resultId]);
-
-  function useSelection() {
-    const selected = window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "";
-    if (selected) setAnchorText(selected.slice(0, 2000));
-  }
-
-  async function submit(e?: React.FormEvent) {
-    e?.preventDefault();
-    const text = draft.trim();
-    if (!text || posting) return;
-
-    setPosting(true);
-    setError(null);
-    try {
-      window.localStorage.setItem("eps-mentor-comment-author", author.trim());
-      const res = await fetch(`/api/mentor/claim/${resultId}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          author: author.trim() || undefined,
-          body: text,
-          anchorText: anchorText || undefined,
-          website: "",
-        }),
-      });
-      if (!res.ok) {
-        setError(await res.text());
-        return;
-      }
-      const data = (await res.json()) as { comment: MentorComment };
-      setComments((current) => [...current, data.comment]);
-      setDraft("");
-      setAnchorText("");
-    } finally {
-      setPosting(false);
-    }
-  }
-
-  return (
-    <section className="mt-5 border-t border-border pt-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-[13px] font-semibold text-fg">
-          <MessageSquare className="h-4 w-4 text-muted" />
-          Comments
-        </div>
-        <button
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={useSelection}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-[11px] text-muted hover:bg-raised hover:text-fg"
-        >
-          <Quote className="h-3.5 w-3.5" />
-          Use selected text
-        </button>
-      </div>
-
-      {anchorText && (
-        <div className="mb-3 rounded-md border border-border bg-subtle/50 p-2 text-[12px] text-muted">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="font-medium text-fg-soft">Selection</span>
-            <button
-              type="button"
-              onClick={() => setAnchorText("")}
-              className="text-[11px] hover:text-fg"
-            >
-              Clear
-            </button>
-          </div>
-          <p className="line-clamp-4 leading-relaxed">{anchorText}</p>
-        </div>
-      )}
-
-      <form onSubmit={submit} className="mb-4 space-y-2">
-        <input
-          value={author}
-          onChange={(event) => setAuthor(event.target.value)}
-          placeholder="Name"
-          className="w-full rounded-md border border-border bg-canvas px-2.5 py-1.5 text-[12px] text-fg placeholder:text-muted focus:border-accent focus:outline-none"
-        />
-        <div className="flex items-end gap-2">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={3}
-            placeholder="Add a comment..."
-            disabled={posting}
-            className="min-h-[72px] flex-1 resize-none rounded-md border border-border bg-canvas px-2.5 py-2 text-[13px] leading-relaxed text-fg placeholder:text-muted focus:border-accent focus:outline-none disabled:opacity-60"
-          />
-          <button
-            type="submit"
-            disabled={posting || !draft.trim()}
-            className="grid h-10 w-10 place-items-center rounded-md bg-fg text-canvas disabled:opacity-40"
-            aria-label="Post comment"
-          >
-            {posting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </button>
-        </div>
-      </form>
-
-      {error && (
-        <p className="mb-3 rounded-md border border-confidence-low/30 bg-confidence-low/10 p-2 text-[12px] text-muted">
-          {error}
-        </p>
-      )}
-
-      {!loaded ? (
-        <p className="text-[12px] text-muted">Loading comments...</p>
-      ) : comments.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border p-3 text-center text-[12px] text-muted">
-          No comments yet.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {comments.map((comment) => {
-            const parsed = parseComment(comment.body);
-            return (
-              <li key={comment.id} className="rounded-md border border-border bg-subtle/30 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
-                  <span className="font-medium text-fg">{comment.authorEmail ?? comment.author}</span>
-                  <span className="font-mono text-[10px] text-muted">
-                    {formatCommentDate(comment.createdAt)}
-                  </span>
-                </div>
-                {parsed.anchorText && (
-                  <blockquote className="mb-2 border-l border-border pl-2 text-[12px] leading-relaxed text-muted">
-                    {parsed.anchorText}
-                  </blockquote>
-                )}
-                <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-fg-soft">
-                  {parsed.text}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
   );
 }

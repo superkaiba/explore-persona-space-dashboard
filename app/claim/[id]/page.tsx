@@ -218,7 +218,8 @@ export default async function ClaimPage({
             claimId={claim.id}
             claimTitle={claim.title}
             canChat={canEdit || devChatEnabled}
-            canPostComments={canEdit}
+            canPostComments
+            publicCommenting={!canEdit}
             currentUserEmail={emailOrDev(user?.email)}
           />
         </div>

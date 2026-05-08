@@ -16,6 +16,7 @@ const REPO_PATH =
 type GitHubKanbanResultIssue = {
   number: number;
   title: string;
+  body: string;
   useful: boolean;
   statusName: "Useful" | "Not useful";
   createdAt: string;
@@ -135,8 +136,46 @@ async function getGitHubKanbanResultIssues(): Promise<GitHubKanbanResultIssue[]>
     byNumber.set(issue.number, issue);
   }
 
-  return Array.from(byNumber.values()).sort(
+  const issues = await hydrateIssueBodies(Array.from(byNumber.values()));
+  return issues.sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+}
+
+async function hydrateIssueBodies(
+  issues: GitHubKanbanResultIssue[],
+): Promise<GitHubKanbanResultIssue[]> {
+  return Promise.all(
+    issues.map(async (issue) => {
+      try {
+        const response = await fetch(
+          `https://api.github.com/repos/${REPO_PATH}/issues/${issue.number}`,
+          {
+            cache: "no-store",
+            headers: githubHeaders(),
+          },
+        );
+        if (!response.ok) return issue;
+        const data = (await response.json()) as {
+          title?: string;
+          body?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          html_url?: string;
+        };
+        return {
+          ...issue,
+          title: data.title ?? issue.title,
+          body: data.body ?? issue.body,
+          createdAt: data.created_at ?? issue.createdAt,
+          updatedAt: data.updated_at ?? issue.updatedAt,
+          url: data.html_url ?? issue.url,
+        };
+      } catch (error) {
+        console.warn(`GitHub issue fetch failed for #${issue.number}:`, error);
+        return issue;
+      }
+    }),
   );
 }
 
@@ -166,6 +205,7 @@ function kanbanIssueFromItem(
   return {
     number,
     title,
+    body: "",
     useful: statusName === "Useful",
     statusName,
     createdAt,
@@ -175,14 +215,12 @@ function kanbanIssueFromItem(
 }
 
 function cleanResultFromKanbanIssue(issue: GitHubKanbanResultIssue): CleanResult {
-  const body = [
-    `GitHub issue #${issue.number} is in the ${issue.statusName} column of the GitHub project board.`,
-    "",
-    issue.url,
-  ].join("\n");
+  const body =
+    issue.body.trim() ||
+    `GitHub issue #${issue.number} is in the ${issue.statusName} column of the GitHub project board.`;
 
   return {
-    id: `github-issue-${issue.number}`,
+    id: stableIssueCommentId(issue.number),
     title: issue.title,
     body,
     excerpt: markdownExcerpt(body),
@@ -193,6 +231,21 @@ function cleanResultFromKanbanIssue(issue: GitHubKanbanResultIssue): CleanResult
     updatedAt: issue.updatedAt,
     href: issue.url,
   };
+}
+
+function stableIssueCommentId(issueNumber: number) {
+  return `00000000-0000-4000-8000-${issueNumber.toString(16).padStart(12, "0").slice(-12)}`;
+}
+
+function githubHeaders() {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "eps-dashboard",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 function readScriptJson<T>(html: string, id: string): T | null {
