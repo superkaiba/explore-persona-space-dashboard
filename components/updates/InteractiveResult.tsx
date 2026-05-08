@@ -20,6 +20,7 @@ import { dayKey, formatTime } from "@/lib/update-results";
 import {
   ClaudeAskButton,
   ClaudeAskComposer,
+  clearClaudeHover,
   dispatchClaudeHover,
   type ClaudeAskPayload,
 } from "@/components/updates/MentorClaudePanel";
@@ -39,9 +40,12 @@ export function InteractiveResultCard({
     <>
       <article
         data-claude-anchor
+        data-claude-scope-id={result.id}
         onMouseEnter={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
+        onMouseLeave={(event) => clearClaudeHover(event.currentTarget)}
         onFocus={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
-        className="rounded-lg border border-border bg-panel p-4 transition-colors hover:bg-subtle/35"
+        onBlur={(event) => clearClaudeHover(event.currentTarget)}
+        className="rounded-lg border border-border bg-panel p-4 transition-colors hover:bg-subtle/35 data-[claude-connected=true]:border-accent/60 data-[claude-connected=true]:bg-accent/5 data-[claude-hovered=true]:border-accent data-[claude-hovered=true]:bg-accent/10"
       >
         <div className="flex items-start gap-3">
           <button
@@ -102,9 +106,12 @@ export function InteractiveResultRow({
     <>
       <div
         data-claude-anchor
+        data-claude-scope-id={result.id}
         onMouseEnter={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
+        onMouseLeave={(event) => clearClaudeHover(event.currentTarget)}
         onFocus={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
-        className="rounded-md border border-border bg-panel px-3 py-2 transition-colors hover:bg-subtle/35"
+        onBlur={(event) => clearClaudeHover(event.currentTarget)}
+        className="rounded-md border border-border bg-panel px-3 py-2 transition-colors hover:bg-subtle/35 data-[claude-connected=true]:border-accent/60 data-[claude-connected=true]:bg-accent/5 data-[claude-hovered=true]:border-accent data-[claude-hovered=true]:bg-accent/10"
       >
         <div className="flex min-w-0 items-start gap-3">
           <ResultBadge result={result} compact />

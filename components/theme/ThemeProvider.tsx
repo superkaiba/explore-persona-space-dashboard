@@ -63,7 +63,7 @@ const ThemeContext = createContext<Ctx | null>(null);
 
 function resolveMode(mode: ThemeMode): "dark" | "light" {
   if (mode === "system") {
-    if (typeof window === "undefined") return "dark";
+    if (typeof window === "undefined") return "light";
     return window.matchMedia("(prefers-color-scheme: light)").matches
       ? "light"
       : "dark";
@@ -72,16 +72,16 @@ function resolveMode(mode: ThemeMode): "dark" | "light" {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>("dark");
+  const [mode, setModeState] = useState<ThemeMode>("light");
   const [accent, setAccentState] = useState<Accent>("violet");
   const [preset, setPresetState] = useState<Preset>("aurora");
-  const [resolved, setResolved] = useState<"dark" | "light">("dark");
+  const [resolved, setResolved] = useState<"dark" | "light">("light");
 
   // Hydrate from localStorage on first client paint and apply to <html>.
   useEffect(() => {
     const storedMode = (typeof window !== "undefined"
       ? (localStorage.getItem(THEME_KEY) as ThemeMode | null)
-      : null) ?? "dark";
+      : null) ?? "light";
     const storedAccent = (typeof window !== "undefined"
       ? (localStorage.getItem(ACCENT_KEY) as Accent | null)
       : null) ?? "violet";
@@ -152,8 +152,8 @@ export function useTheme(): Ctx {
   if (!ctx) {
     // Safe default for non-provider contexts (e.g., during SSR storybook).
     return {
-      mode: "dark",
-      resolved: "dark",
+      mode: "light",
+      resolved: "light",
       accent: "violet",
       preset: "aurora",
       setMode: () => {},
@@ -172,7 +172,7 @@ export function useTheme(): Ctx {
 export const themeBootstrapScript = `
 (function(){
   try {
-    var t = localStorage.getItem('${THEME_KEY}') || 'dark';
+    var t = localStorage.getItem('${THEME_KEY}') || 'light';
     var a = localStorage.getItem('${ACCENT_KEY}') || 'violet';
     var p = localStorage.getItem('${PRESET_KEY}') || 'aurora';
     var resolved = t === 'system'
@@ -182,7 +182,7 @@ export const themeBootstrapScript = `
     document.documentElement.dataset.accent = a;
     document.documentElement.dataset.preset = p;
   } catch (e) {
-    document.documentElement.dataset.theme = 'dark';
+    document.documentElement.dataset.theme = 'light';
     document.documentElement.dataset.accent = 'violet';
     document.documentElement.dataset.preset = 'aurora';
   }

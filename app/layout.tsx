@@ -33,7 +33,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-theme="dark"
+      data-theme="light"
       data-accent="violet"
       data-preset="aurora"
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable}`}

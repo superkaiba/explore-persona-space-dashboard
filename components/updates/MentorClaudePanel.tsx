@@ -70,7 +70,6 @@ type ChatMessage =
       pending?: boolean;
       startupPhase?: StartupPhase;
       startedAt?: number;
-      cost?: number;
       durationMs?: number;
     };
 
@@ -129,12 +128,48 @@ function anchorForElement(element: HTMLElement): AnchorRect {
   return rectPayload((anchor ?? element).getBoundingClientRect());
 }
 
+function anchorElement(element: HTMLElement): HTMLElement {
+  return (element.closest("[data-claude-anchor]") as HTMLElement | null) ?? element;
+}
+
+function setHoveredAnchor(element: HTMLElement) {
+  document
+    .querySelectorAll<HTMLElement>("[data-claude-anchor][data-claude-hovered='true']")
+    .forEach((anchor) => {
+      delete anchor.dataset.claudeHovered;
+    });
+  anchorElement(element).dataset.claudeHovered = "true";
+}
+
+function findVisibleAnchor(scopeId: string) {
+  for (const anchor of document.querySelectorAll<HTMLElement>("[data-claude-anchor]")) {
+    if (anchor.dataset.claudeScopeId !== scopeId) continue;
+    const rect = anchor.getBoundingClientRect();
+    if (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.bottom >= 0 &&
+      rect.top <= window.innerHeight &&
+      rect.right >= 0 &&
+      rect.left <= window.innerWidth
+    ) {
+      return anchor;
+    }
+  }
+  return null;
+}
+
 export function dispatchClaudeHover(payload: ClaudeAskPayload, element: HTMLElement) {
+  setHoveredAnchor(element);
   window.dispatchEvent(
     new CustomEvent<ClaudeAskPayload>(HOVER_EVENT, {
       detail: { ...payload, anchorRect: anchorForElement(element) },
     }),
   );
+}
+
+export function clearClaudeHover(element: HTMLElement) {
+  delete anchorElement(element).dataset.claudeHovered;
 }
 
 export function ClaudeAskButton({
@@ -275,6 +310,52 @@ export function MentorClaudePanel({
     }, 250);
     return () => window.clearTimeout(id);
   }, [mounted, storageKey, windows]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    document
+      .querySelectorAll<HTMLElement>("[data-claude-anchor][data-claude-connected='true']")
+      .forEach((anchor) => {
+        delete anchor.dataset.claudeConnected;
+      });
+
+    for (const win of windows) {
+      if (!win.open || win.scopeKind !== "result") continue;
+      for (const anchor of document.querySelectorAll<HTMLElement>("[data-claude-anchor]")) {
+        if (anchor.dataset.claudeScopeId === win.scopeId) {
+          anchor.dataset.claudeConnected = "true";
+        }
+      }
+    }
+  }, [mounted, windows]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    let raf = 0;
+    const refreshAnchors = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        setWindows((current) =>
+          current.map((win) => {
+            if (!win.open || win.scopeKind !== "result") return win;
+            const anchor = findVisibleAnchor(win.scopeId);
+            if (!anchor) return win;
+            return { ...win, anchorRect: rectPayload(anchor.getBoundingClientRect()) };
+          }),
+        );
+      });
+    };
+
+    window.addEventListener("scroll", refreshAnchors, true);
+    window.addEventListener("resize", refreshAnchors);
+    refreshAnchors();
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", refreshAnchors, true);
+      window.removeEventListener("resize", refreshAnchors);
+    };
+  }, [mounted]);
 
   useEffect(() => {
     setWindows((current) =>
@@ -611,7 +692,6 @@ export function MentorClaudePanel({
               updateAssistant((message) => {
                 message.pending = false;
                 message.startupPhase = null;
-                if (typeof parsed.data.cost_usd === "number") message.cost = parsed.data.cost_usd;
                 if (typeof parsed.data.duration_ms === "number") {
                   message.durationMs = parsed.data.duration_ms;
                 }
@@ -768,6 +848,7 @@ function ClaudeChatWindow({
   }, [activeTab?.id, activeTab?.messages]);
 
   if (!activeTab) return null;
+  const connector = connectorGeometry(win, style);
 
   function send(e?: React.FormEvent) {
     e?.preventDefault();
@@ -775,121 +856,164 @@ function ClaudeChatWindow({
   }
 
   return (
-    <aside
-      className="pointer-events-auto fixed flex flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-rail"
-      style={style}
-    >
-      <header className="flex items-start gap-3 border-b border-border bg-panel px-4 py-3">
-        <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold text-fg">Claude Code</div>
-          <div className="mt-0.5 truncate text-[11px] text-muted">{win.scopeTitle}</div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md p-1 text-muted transition-colors hover:bg-subtle hover:text-fg"
-          aria-label="Close Claude chat"
+    <>
+      {connector && (
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 h-screen w-screen"
         >
-          <X className="h-4 w-4" />
-        </button>
-      </header>
+          <path
+            d={connector.path}
+            fill="none"
+            stroke="rgb(var(--accent) / 0.72)"
+            strokeLinecap="round"
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle
+            cx={connector.anchorDot.x}
+            cy={connector.anchorDot.y}
+            r="3"
+            fill="rgb(var(--accent))"
+          />
+          <circle
+            cx={connector.windowDot.x}
+            cy={connector.windowDot.y}
+            r="2.5"
+            fill="rgb(var(--panel))"
+            stroke="rgb(var(--accent))"
+            strokeWidth="1.5"
+          />
+        </svg>
+      )}
+      <aside
+        className={cn(
+          "pointer-events-auto fixed z-10 flex flex-col overflow-hidden rounded-lg border bg-panel shadow-rail",
+          connector ? "border-accent/65" : "border-border",
+        )}
+        style={style}
+      >
+        {connector && (
+          <div
+            aria-hidden="true"
+            className={cn(
+              "absolute top-0 z-20 h-full w-[2px] bg-accent/70",
+              connector.side === "left" ? "left-0" : "right-0",
+            )}
+          />
+        )}
+        <header className="flex items-start gap-3 border-b border-border bg-panel px-4 py-3">
+          <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-semibold text-fg">Claude Code</div>
+            <div className="mt-0.5 truncate text-[11px] text-muted">{win.scopeTitle}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 text-muted transition-colors hover:bg-subtle hover:text-fg"
+            aria-label="Close Claude chat"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
 
-      <div className="flex min-h-0 items-center gap-1 border-b border-border bg-subtle/35 px-2">
-        <div className="flex min-w-0 flex-1 overflow-x-auto">
-          {win.tabs.map((tab, index) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onActivateTab(tab.id)}
-              className={cn(
-                "group flex max-w-[150px] shrink-0 items-center gap-1 border-b px-2 py-2 text-left text-[11px] transition-colors",
-                tab.id === activeTab.id
-                  ? "border-fg text-fg"
-                  : "border-transparent text-muted hover:text-fg",
-              )}
-            >
-              <span className="truncate">{tab.title || `Tab ${index + 1}`}</span>
-              {tab.pending && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
-              {win.tabs.length > 1 && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onCloseTab(tab.id);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
+        <div className="flex min-h-0 items-center gap-1 border-b border-border bg-subtle/35 px-2">
+          <div className="flex min-w-0 flex-1 overflow-x-auto">
+            {win.tabs.map((tab, index) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onActivateTab(tab.id)}
+                className={cn(
+                  "group flex max-w-[150px] shrink-0 items-center gap-1 border-b px-2 py-2 text-left text-[11px] transition-colors",
+                  tab.id === activeTab.id
+                    ? "border-fg text-fg"
+                    : "border-transparent text-muted hover:text-fg",
+                )}
+              >
+                <span className="truncate">{tab.title || `Tab ${index + 1}`}</span>
+                {tab.pending && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
+                {win.tabs.length > 1 && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
                       event.stopPropagation();
                       onCloseTab(tab.id);
-                    }
-                  }}
-                  className="rounded p-0.5 text-faint opacity-0 hover:bg-border hover:text-fg group-hover:opacity-100"
-                  aria-label={`Close ${tab.title}`}
-                >
-                  <X className="h-3 w-3" />
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={onNewTab}
-          className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-fg"
-          aria-label="New Claude chat tab"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {activeTab.messages.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border bg-subtle/30 p-3 text-[12px] leading-relaxed text-muted">
-            Ask about this scope. This tab keeps its own Claude Code session.
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-4">
-            {activeTab.messages.map((message) => (
-              <li key={message.id}>
-                <ChatMessageView message={message} />
-              </li>
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onCloseTab(tab.id);
+                      }
+                    }}
+                    className="rounded p-0.5 text-faint opacity-0 hover:bg-border hover:text-fg group-hover:opacity-100"
+                    aria-label={`Close ${tab.title}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </span>
+                )}
+              </button>
             ))}
-          </ul>
-        )}
-      </div>
+          </div>
+          <button
+            type="button"
+            onClick={onNewTab}
+            className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-fg"
+            aria-label="New Claude chat tab"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
 
-      <form onSubmit={send} className="flex items-end gap-2 border-t border-border bg-panel p-3">
-        <textarea
-          value={activeTab.draft}
-          onChange={(event) => onDraftChange(activeTab.id, event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send();
-            }
-          }}
-          rows={2}
-          disabled={activeTab.pending}
-          placeholder="Ask Claude Code..."
-          className="min-h-[44px] flex-1 resize-none rounded-md border border-border bg-subtle px-3 py-2 text-[13px] leading-relaxed text-fg placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
-        />
-        <button
-          type="submit"
-          disabled={activeTab.pending || !activeTab.draft.trim()}
-          className="grid h-10 w-10 place-items-center rounded-md bg-fg text-canvas transition-opacity disabled:opacity-40"
-          aria-label="Send question"
-        >
-          {activeTab.pending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          {activeTab.messages.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border bg-subtle/30 p-3 text-[12px] leading-relaxed text-muted">
+              Ask about this scope. This tab keeps its own Claude Code session.
+            </div>
           ) : (
-            <Send className="h-4 w-4" />
+            <ul className="flex flex-col gap-4">
+              {activeTab.messages.map((message) => (
+                <li key={message.id}>
+                  <ChatMessageView message={message} />
+                </li>
+              ))}
+            </ul>
           )}
-        </button>
-      </form>
-    </aside>
+        </div>
+
+        <form onSubmit={send} className="flex items-end gap-2 border-t border-border bg-panel p-3">
+          <textarea
+            value={activeTab.draft}
+            onChange={(event) => onDraftChange(activeTab.id, event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                send();
+              }
+            }}
+            rows={2}
+            disabled={activeTab.pending}
+            placeholder="Ask Claude Code..."
+            className="min-h-[44px] flex-1 resize-none rounded-md border border-border bg-subtle px-3 py-2 text-[13px] leading-relaxed text-fg placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+          />
+          <button
+            type="submit"
+            disabled={activeTab.pending || !activeTab.draft.trim()}
+            className="grid h-10 w-10 place-items-center rounded-md bg-fg text-canvas transition-opacity disabled:opacity-40"
+            aria-label="Send question"
+          >
+            {activeTab.pending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </button>
+        </form>
+      </aside>
+    </>
   );
 }
 
@@ -933,10 +1057,9 @@ function ChatMessageView({ message }: { message: ChatMessage }) {
             Streaming
           </div>
         )}
-        {!message.pending && (message.cost != null || message.durationMs != null) && (
+        {!message.pending && message.durationMs != null && (
           <div className="mt-2 border-t border-border pt-2 font-mono text-[10px] text-muted">
-            {message.durationMs != null ? `${Math.round(message.durationMs / 1000)}s` : ""}
-            {message.cost != null ? ` ${message.cost.toFixed(4)} USD` : ""}
+            {Math.round(message.durationMs / 1000)}s
           </div>
         )}
       </div>
@@ -1071,6 +1194,39 @@ function chatWindowStyle(
   }
 
   return { left, top, width, height };
+}
+
+function connectorGeometry(win: ChatWindow, style: CSSProperties) {
+  if (win.scopeKind !== "result" || !win.anchorRect) return null;
+  const left = numericStyle(style.left);
+  const top = numericStyle(style.top);
+  const width = numericStyle(style.width);
+  const height = numericStyle(style.height);
+  if (left == null || top == null || width == null || height == null) return null;
+
+  const anchor = win.anchorRect;
+  const windowIsRightOfAnchor = left >= anchor.right;
+  const startX = windowIsRightOfAnchor ? anchor.right : anchor.left;
+  const rawEndX = windowIsRightOfAnchor ? left : left + width;
+  const anchorY = clamp(anchor.top + anchor.height / 2, 8, window.innerHeight - 8);
+  const endY = clamp(anchorY, top + 52, top + height - 64);
+  const midX = startX + (rawEndX - startX) * 0.52;
+
+  return {
+    path: `M ${startX} ${anchorY} L ${midX} ${anchorY} L ${midX} ${endY} L ${rawEndX} ${endY}`,
+    side: windowIsRightOfAnchor ? ("left" as const) : ("right" as const),
+    anchorDot: { x: startX, y: anchorY },
+    windowDot: { x: rawEndX, y: endY },
+  };
+}
+
+function numericStyle(value: CSSProperties[keyof CSSProperties]) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.endsWith("px")) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function clamp(value: number, min: number, max: number) {
