@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Network, Activity, ListTodo, CalendarDays, Sparkles, Plus } from "lucide-react";
+import { Network, Activity, ListTodo, CalendarDays, Sparkles, Plus, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/graph", label: "Graph", icon: Network },
-  { href: "/live", label: "Live", icon: Activity },
-  { href: "/todos", label: "Todos", icon: ListTodo },
+  { href: "/live", label: "Queue", icon: Activity },
+  { href: "/todos", label: "Tasks", icon: ListTodo },
+  { href: "/lit", label: "Literature", icon: BookOpen },
   { href: "/timeline/today", label: "Today", icon: CalendarDays },
   { href: "/timeline/week", label: "Week", icon: CalendarDays },
 ];

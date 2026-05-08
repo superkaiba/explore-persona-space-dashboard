@@ -14,7 +14,8 @@ via the `gh` CLI for backfill, but is otherwise decoupled.
 ## Access model
 
 - **Public read** (no login): `/graph`, `/claim/[id]`, `/experiment/[id]`,
-  `/run/[id]`, `/timeline/today`, `/timeline/week`, `/live`, `/todos`.
+  `/run/[id]`, `/timeline/today`, `/timeline/week`, `/live`, `/todos`,
+  `/lit`.
 - **Auth required** (only the project owner, signed in via Supabase magic
   link to your email): chat rail, write endpoints (TipTap save, edge
   add/remove, todo CRUD, "create claim").
@@ -78,13 +79,32 @@ pnpm db:init-rls                   # applies db/policies.sql (public-read, auth-
    `superkaiba/explore-persona-space`.
 2. **Root directory**: `dashboard`.
 3. **Environment variables** — paste the same values from `.env.local`,
-   plus `NEXT_PUBLIC_SITE_URL=https://<your-vercel-url>`.
+   plus `NEXT_PUBLIC_SITE_URL=https://<your-vercel-url>` and a random
+   `LIT_INGEST_SECRET` for the literature workflow sync endpoint.
 4. Deploy.
 5. Once deployed, update Supabase Auth → URL Configuration → **Site URL**
    to match the Vercel URL, and add it to the **Redirect URLs** list.
 6. Update the GitHub OAuth app's Homepage URL to the Vercel URL too.
 
-### 5. Cloudflare Tunnel (deferred to milestone 7)
+### 5. Literature workflow sync
+
+The VM literature workflow writes to local SQLite first, then syncs into
+Supabase through the Vercel app:
+
+```bash
+cd /home/thomasjiralerspong/personal-assistant
+
+# in .env
+LIT_INGEST_URL=https://<your-vercel-url>/api/lit/ingest
+LIT_INGEST_SECRET=<same-value-as-vercel>
+
+uv run python lit-review/sync_vercel.py
+```
+
+The sync is idempotent. Public item and idea metadata is visible at `/lit`;
+read status, notes, clarifications, and link review controls require login.
+
+### 6. Cloudflare Tunnel (deferred to milestone 7)
 
 When the chat agent ships, expose the VM-hosted Python sidecar at a stable
 URL the Vercel app can call:
@@ -109,6 +129,7 @@ app/                          # Next.js App Router
   live/                       Agent kanban [M7+]
   todos/                      Todo board [M6]
   timeline/{today,week}/      Day/week summaries [M5]
+  lit/                        Literature reader + research idea log
   claim/[id]/                 Claim detail [M4]
   experiment/[id]/            Experiment detail [M4]
   run/[id]/                   Run detail [M4]

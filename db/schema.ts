@@ -6,8 +6,11 @@ import {
   integer,
   timestamp,
   jsonb,
+  boolean,
+  real,
   primaryKey,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const confidenceEnum = pgEnum("confidence", ["HIGH", "MODERATE", "LOW"]);
@@ -53,16 +56,70 @@ export const entityKindEnum = pgEnum("entity_kind", [
 ]);
 
 export const todoStatusEnum = pgEnum("todo_status", [
+  "inbox",
+  "scoped",
+  "planning",
   "open",
   "in_progress",
+  "running",
+  "interpreting",
+  "awaiting_promotion",
+  "blocked",
   "done",
   "cancelled",
+  "archived",
 ]);
 
 export const messageRoleEnum = pgEnum("message_role", [
   "user",
   "assistant",
   "tool",
+]);
+
+export const litItemTypeEnum = pgEnum("lit_item_type", [
+  "paper",
+  "blog_post",
+  "forum_post",
+  "newsletter",
+  "report",
+  "repo",
+  "video",
+  "other",
+]);
+
+export const litReadStatusEnum = pgEnum("lit_read_status", [
+  "unread",
+  "skimmed",
+  "read",
+]);
+
+export const litRelationTypeEnum = pgEnum("lit_relation_type", [
+  "supports",
+  "contradicts",
+  "method",
+  "baseline",
+  "background",
+  "threat",
+  "inspiration",
+]);
+
+export const litLinkStatusEnum = pgEnum("lit_link_status", [
+  "proposed",
+  "accepted",
+  "rejected",
+]);
+
+export const litLinkSourceEnum = pgEnum("lit_link_source", [
+  "auto",
+  "manual",
+]);
+
+export const researchIdeaStatusEnum = pgEnum("research_idea_status", [
+  "seed",
+  "active",
+  "paused",
+  "developed",
+  "abandoned",
 ]);
 
 export const claims = pgTable("claim", {
@@ -110,12 +167,18 @@ export const todos = pgTable("todo", {
   id: uuid("id").primaryKey().defaultRandom(),
   text: text("text").notNull(),
   due: timestamp("due", { withTimezone: true }),
-  status: todoStatusEnum("status").notNull().default("open"),
+  status: todoStatusEnum("status").notNull().default("inbox"),
   kind: text("kind").notNull().default("proposed"),
+  intentMode: text("intent_mode").notNull().default("exploratory"),
+  intentSummary: text("intent_summary"),
+  usefulIf: text("useful_if"),
+  priority: text("priority").notNull().default("normal"),
+  ownerNote: text("owner_note"),
   linkedKind: entityKindEnum("linked_kind"),
   linkedId: uuid("linked_id"),
   githubIssueNumber: integer("github_issue_number").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const edges = pgTable(
@@ -213,6 +276,194 @@ export const chatMessages = pgTable(
   }),
 );
 
+export const litItems = pgTable(
+  "lit_item",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    externalId: text("external_id").notNull(),
+    type: litItemTypeEnum("type").notNull().default("paper"),
+    title: text("title").notNull(),
+    authorsJson: jsonb("authors_json").$type<string[]>(),
+    abstract: text("abstract"),
+    summary: text("summary"),
+    url: text("url"),
+    pdfUrl: text("pdf_url"),
+    arxivId: text("arxiv_id"),
+    doi: text("doi"),
+    source: text("source"),
+    sourceDetail: text("source_detail"),
+    tagsJson: jsonb("tags_json").$type<string[]>(),
+    metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    discoveredAt: timestamp("discovered_at", { withTimezone: true }).defaultNow().notNull(),
+    workflowUpdatedAt: timestamp("workflow_updated_at", { withTimezone: true }),
+    public: boolean("public").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    externalUnique: uniqueIndex("lit_item_external_id_unique").on(t.externalId),
+    recentIdx: index("lit_item_recent_idx").on(t.publishedAt, t.discoveredAt),
+    typeIdx: index("lit_item_type_idx").on(t.type),
+  }),
+);
+
+export const litItemAnalyses = pgTable(
+  "lit_item_analysis",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    externalId: text("external_id").notNull(),
+    itemId: uuid("item_id")
+      .references(() => litItems.id, { onDelete: "cascade" })
+      .notNull(),
+    analysisMd: text("analysis_md"),
+    tldr: text("tldr"),
+    threatLevel: text("threat_level"),
+    readSignal: text("read_signal"),
+    section: text("section"),
+    aimTag: text("aim_tag"),
+    sourcePath: text("source_path"),
+    generatedAt: timestamp("generated_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    externalUnique: uniqueIndex("lit_item_analysis_external_id_unique").on(t.externalId),
+    itemIdx: index("lit_item_analysis_item_idx").on(t.itemId),
+  }),
+);
+
+export const researchIdeas = pgTable(
+  "research_idea",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    externalId: text("external_id").notNull(),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    status: researchIdeaStatusEnum("status").notNull().default("seed"),
+    shortSummary: text("short_summary"),
+    expandedSummary: text("expanded_summary"),
+    hypothesis: text("hypothesis"),
+    motivation: text("motivation"),
+    nextExperiments: text("next_experiments"),
+    sourcePath: text("source_path"),
+    public: boolean("public").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    externalUnique: uniqueIndex("research_idea_external_id_unique").on(t.externalId),
+    slugUnique: uniqueIndex("research_idea_slug_unique").on(t.slug),
+    statusIdx: index("research_idea_status_idx").on(t.status, t.updatedAt),
+  }),
+);
+
+export const researchIdeaClarifications = pgTable(
+  "research_idea_clarification",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ideaId: uuid("idea_id")
+      .references(() => researchIdeas.id, { onDelete: "cascade" })
+      .notNull(),
+    body: text("body").notNull(),
+    public: boolean("public").notNull().default(false),
+    userId: uuid("user_id"),
+    userEmail: text("user_email"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    ideaIdx: index("research_idea_clarification_idea_idx").on(t.ideaId, t.createdAt),
+  }),
+);
+
+export const litIdeaLinks = pgTable(
+  "lit_idea_link",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ideaId: uuid("idea_id")
+      .references(() => researchIdeas.id, { onDelete: "cascade" })
+      .notNull(),
+    itemId: uuid("item_id")
+      .references(() => litItems.id, { onDelete: "cascade" })
+      .notNull(),
+    relationType: litRelationTypeEnum("relation_type").notNull().default("background"),
+    confidence: real("confidence"),
+    rationale: text("rationale"),
+    status: litLinkStatusEnum("status").notNull().default("proposed"),
+    source: litLinkSourceEnum("source").notNull().default("auto"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueLink: uniqueIndex("lit_idea_link_unique").on(t.ideaId, t.itemId, t.relationType),
+    ideaIdx: index("lit_idea_link_idea_idx").on(t.ideaId, t.status),
+    itemIdx: index("lit_idea_link_item_idx").on(t.itemId, t.status),
+  }),
+);
+
+export const researchIdeaEvents = pgTable(
+  "research_idea_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    externalId: text("external_id"),
+    ideaId: uuid("idea_id")
+      .references(() => researchIdeas.id, { onDelete: "cascade" })
+      .notNull(),
+    eventType: text("event_type").notNull(),
+    body: text("body").notNull(),
+    public: boolean("public").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    externalUnique: uniqueIndex("research_idea_event_external_id_unique").on(t.externalId),
+    ideaIdx: index("research_idea_event_idea_idx").on(t.ideaId, t.createdAt),
+  }),
+);
+
+export const litDigestRuns = pgTable(
+  "lit_digest_run",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runDate: text("run_date").notNull(),
+    status: text("status").notNull().default("imported"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    candidateCount: integer("candidate_count"),
+    selectedCount: integer("selected_count"),
+    logPath: text("log_path"),
+    summaryMd: text("summary_md"),
+    notificationStatus: text("notification_status"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    runDateUnique: uniqueIndex("lit_digest_run_date_unique").on(t.runDate),
+    recentIdx: index("lit_digest_run_recent_idx").on(t.runDate),
+  }),
+);
+
+export const litItemStates = pgTable(
+  "lit_item_state",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemId: uuid("item_id")
+      .references(() => litItems.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: uuid("user_id").notNull(),
+    userEmail: text("user_email"),
+    readStatus: litReadStatusEnum("read_status").notNull().default("unread"),
+    notes: text("notes"),
+    archived: boolean("archived").notNull().default(false),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueState: uniqueIndex("lit_item_state_item_user_unique").on(t.itemId, t.userId),
+    userIdx: index("lit_item_state_user_idx").on(t.userId, t.readStatus, t.updatedAt),
+  }),
+);
+
 export type Claim = typeof claims.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
 export type Experiment = typeof experiments.$inferSelect;
@@ -226,3 +477,11 @@ export type Comment = typeof comments.$inferSelect;
 export type AgentTask = typeof agentTasks.$inferSelect;
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type LitItem = typeof litItems.$inferSelect;
+export type LitItemAnalysis = typeof litItemAnalyses.$inferSelect;
+export type ResearchIdea = typeof researchIdeas.$inferSelect;
+export type ResearchIdeaClarification = typeof researchIdeaClarifications.$inferSelect;
+export type LitIdeaLink = typeof litIdeaLinks.$inferSelect;
+export type ResearchIdeaEvent = typeof researchIdeaEvents.$inferSelect;
+export type LitDigestRun = typeof litDigestRuns.$inferSelect;
+export type LitItemState = typeof litItemStates.$inferSelect;
