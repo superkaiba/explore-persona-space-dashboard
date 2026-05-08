@@ -82,6 +82,7 @@ export function DailyCleanResultsUpdate({
           payload={{
             scopeKind: "global",
             scopeId: `daily-${selectedKey}`,
+            sourceLabel: "Global",
             scopeTitle: `Daily update - ${formatDay(selectedDate)}`,
             contextMd: context,
             suggestedQuestion: "What should I take away from today's results?",
@@ -193,6 +194,7 @@ export function CleanResultsLogUpdate({
           payload={{
             scopeKind: "global",
             scopeId: `log-${dayKey(generatedAt)}`,
+            sourceLabel: "Global",
             scopeTitle: "Results log",
             contextMd: context,
             suggestedQuestion: "What should I take away from the recent clean results?",
@@ -292,6 +294,7 @@ export function WeeklyCleanResultsUpdate({
           payload={{
             scopeKind: "global",
             scopeId: "weekly-current",
+            sourceLabel: "Global",
             scopeTitle: "Weekly update",
             contextMd: context,
             suggestedQuestion: "What are the main takeaways from this week's results?",

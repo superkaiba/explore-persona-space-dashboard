@@ -44,6 +44,7 @@ export type ClaudeAskPayload = {
   autoSubmit?: boolean;
   scopeKind?: ClaudeScopeKind;
   scopeId?: string;
+  sourceLabel?: string;
   anchorRect?: AnchorRect | null;
   startNewTab?: boolean;
 };
@@ -86,6 +87,7 @@ type ChatWindow = {
   key: string;
   scopeKind: ClaudeScopeKind;
   scopeId: string;
+  sourceLabel: string;
   scopeTitle: string;
   contextMd: string;
   suggestedQuestion: string;
@@ -103,6 +105,7 @@ type NormalizedPayload = Required<
   Pick<ClaudeAskPayload, "initialQuestion" | "autoSubmit" | "anchorRect" | "startNewTab"> & {
     scopeKind: ClaudeScopeKind;
     scopeId: string;
+    sourceLabel: string;
     key: string;
   };
 
@@ -371,6 +374,7 @@ export function MentorClaudePanel({
     () => ({
       scopeKind: "global",
       scopeId: sessionId,
+      sourceLabel: "Global",
       scopeTitle: "Results log",
       contextMd: baseContextMd,
       suggestedQuestion: "What are the main takeaways from this update?",
@@ -383,9 +387,12 @@ export function MentorClaudePanel({
       const scopeKind = payload.scopeKind ?? (payload.scopeId ? "result" : "global");
       const scopeId = payload.scopeId ?? (scopeKind === "global" ? sessionId : payload.scopeTitle);
       const key = `${scopeKind}:${scopeId}`;
+      const sourceLabel =
+        payload.sourceLabel ?? inferSourceLabel(scopeKind, payload.contextMd, scopeId);
       return {
         scopeKind,
         scopeId,
+        sourceLabel,
         key,
         scopeTitle: payload.scopeTitle || defaultScope.scopeTitle,
         contextMd: payload.contextMd || baseContextMd,
@@ -447,6 +454,7 @@ export function MentorClaudePanel({
               key: payload.key,
               scopeKind: payload.scopeKind,
               scopeId: payload.scopeId,
+              sourceLabel: payload.sourceLabel,
               scopeTitle: payload.scopeTitle,
               contextMd: payload.contextMd,
               suggestedQuestion: payload.suggestedQuestion,
@@ -483,6 +491,7 @@ export function MentorClaudePanel({
             ...win,
             scopeKind: payload.scopeKind,
             scopeId: payload.scopeId,
+            sourceLabel: payload.sourceLabel,
             scopeTitle: payload.scopeTitle,
             contextMd: payload.contextMd,
             suggestedQuestion: payload.suggestedQuestion,
@@ -737,11 +746,9 @@ export function MentorClaudePanel({
     };
   }, [ensureWindow, normalizePayload, sendText]);
 
-  function closeWindow(windowKey: string) {
+  function closeAllWindows() {
     setWindows((current) =>
-      current.map((win) =>
-        win.key === windowKey ? { ...win, open: false, updatedAt: Date.now() } : win,
-      ),
+      current.map((win) => (win.open ? { ...win, open: false, updatedAt: Date.now() } : win)),
     );
   }
 
@@ -801,28 +808,35 @@ export function MentorClaudePanel({
 
   const openWindows = windows.filter((win) => win.open);
   if (!mounted || openWindows.length === 0) return null;
+  const activeWindow = mostRecentWindow(openWindows);
+  const activeTab = activeWindow?.tabs.find((tab) => tab.id === activeWindow.activeTabId) ?? activeWindow?.tabs[0] ?? null;
+  if (!activeWindow || !activeTab) return null;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
-      {openWindows.map((win, index) => (
-        <ClaudeChatWindow
-          key={win.key}
-          win={win}
-          style={chatWindowStyle(win, index, viewport)}
-          onClose={() => closeWindow(win.key)}
-          onNewTab={() => newTab(win.key)}
-          onCloseTab={(tabId) => closeTab(win.key, tabId)}
-          onActivateTab={(tabId) => activateTab(win.key, tabId)}
-          onDraftChange={(tabId, draft) => setDraft(win.key, tabId, draft)}
-          onSend={(tabId, text) => void sendText(win.key, tabId, text, win)}
-        />
-      ))}
+      <ClaudeChatWindow
+        windows={openWindows}
+        activeWindow={activeWindow}
+        activeTab={activeTab}
+        style={unifiedChatBoxStyle(activeWindow, viewport)}
+        onClose={closeAllWindows}
+        onNewTab={() => newTab(activeWindow.key)}
+        onCloseTab={(windowKey, tabId) => closeTab(windowKey, tabId)}
+        onActivateTab={(windowKey, tabId) => activateTab(windowKey, tabId)}
+        onDraftChange={(windowKey, tabId, draft) => setDraft(windowKey, tabId, draft)}
+        onSend={(windowKey, tabId, text) => {
+          const win = windowsRef.current.find((current) => current.key === windowKey);
+          if (win) void sendText(windowKey, tabId, text, win);
+        }}
+      />
     </div>
   );
 }
 
 function ClaudeChatWindow({
-  win,
+  windows,
+  activeWindow,
+  activeTab,
   style,
   onClose,
   onNewTab,
@@ -831,28 +845,29 @@ function ClaudeChatWindow({
   onDraftChange,
   onSend,
 }: {
-  win: ChatWindow;
+  windows: ChatWindow[];
+  activeWindow: ChatWindow;
+  activeTab: ChatTab;
   style: CSSProperties;
   onClose: () => void;
   onNewTab: () => void;
-  onCloseTab: (tabId: string) => void;
-  onActivateTab: (tabId: string) => void;
-  onDraftChange: (tabId: string, draft: string) => void;
-  onSend: (tabId: string, text: string) => void;
+  onCloseTab: (windowKey: string, tabId: string) => void;
+  onActivateTab: (windowKey: string, tabId: string) => void;
+  onDraftChange: (windowKey: string, tabId: string, draft: string) => void;
+  onSend: (windowKey: string, tabId: string, text: string) => void;
 }) {
-  const activeTab = win.tabs.find((tab) => tab.id === win.activeTabId) ?? win.tabs[0];
   const scrollRef = useRef<HTMLDivElement>(null);
+  const flatTabs = flattenChatTabs(windows);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [activeTab?.id, activeTab?.messages]);
 
-  if (!activeTab) return null;
-  const connector = connectorGeometry(win, style);
+  const connector = connectorGeometry(activeWindow, style);
 
   function send(e?: React.FormEvent) {
     e?.preventDefault();
-    onSend(activeTab.id, activeTab.draft);
+    onSend(activeWindow.key, activeTab.id, activeTab.draft);
   }
 
   return (
@@ -906,7 +921,9 @@ function ClaudeChatWindow({
           <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-semibold text-fg">Claude Code</div>
-            <div className="mt-0.5 truncate text-[11px] text-muted">{win.scopeTitle}</div>
+            <div className="mt-0.5 truncate text-[11px] text-muted">
+              {activeWindow.sourceLabel} · {activeWindow.scopeTitle}
+            </div>
           </div>
           <button
             type="button"
@@ -920,37 +937,42 @@ function ClaudeChatWindow({
 
         <div className="flex min-h-0 items-center gap-1 border-b border-border bg-subtle/35 px-2">
           <div className="flex min-w-0 flex-1 overflow-x-auto">
-            {win.tabs.map((tab, index) => (
+            {flatTabs.map(({ win, tab }) => (
               <button
-                key={tab.id}
+                key={`${win.key}:${tab.id}`}
                 type="button"
-                onClick={() => onActivateTab(tab.id)}
+                onClick={() => onActivateTab(win.key, tab.id)}
                 className={cn(
-                  "group flex max-w-[150px] shrink-0 items-center gap-1 border-b px-2 py-2 text-left text-[11px] transition-colors",
-                  tab.id === activeTab.id
+                  "group relative flex max-w-[170px] shrink-0 flex-col border-b px-2 py-1.5 text-left transition-colors",
+                  win.key === activeWindow.key && tab.id === activeTab.id
                     ? "border-fg text-fg"
                     : "border-transparent text-muted hover:text-fg",
                 )}
               >
-                <span className="truncate">{tab.title || `Tab ${index + 1}`}</span>
-                {tab.pending && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
-                {win.tabs.length > 1 && (
+                <span className="flex w-full min-w-0 items-center gap-1 text-[11px] font-medium">
+                  <span className="truncate">{win.sourceLabel}</span>
+                  {tab.pending && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
+                </span>
+                <span className="flex w-full min-w-0 items-center gap-1 text-[10px] text-muted">
+                  <span className="truncate">{tab.title || win.scopeTitle}</span>
+                </span>
+                {flatTabs.length > 1 && (
                   <span
                     role="button"
                     tabIndex={0}
                     onClick={(event) => {
                       event.stopPropagation();
-                      onCloseTab(tab.id);
+                      onCloseTab(win.key, tab.id);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         event.stopPropagation();
-                        onCloseTab(tab.id);
+                        onCloseTab(win.key, tab.id);
                       }
                     }}
-                    className="rounded p-0.5 text-faint opacity-0 hover:bg-border hover:text-fg group-hover:opacity-100"
-                    aria-label={`Close ${tab.title}`}
+                    className="absolute mt-0.5 self-end rounded p-0.5 text-faint opacity-0 hover:bg-border hover:text-fg group-hover:opacity-100"
+                    aria-label={`Close ${win.sourceLabel} tab`}
                   >
                     <X className="h-3 w-3" />
                   </span>
@@ -987,7 +1009,7 @@ function ClaudeChatWindow({
         <form onSubmit={send} className="flex items-end gap-2 border-t border-border bg-panel p-3">
           <textarea
             value={activeTab.draft}
-            onChange={(event) => onDraftChange(activeTab.id, event.target.value)}
+            onChange={(event) => onDraftChange(activeWindow.key, activeTab.id, event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -1162,22 +1184,21 @@ function makeTab(index: number, draft: string): ChatTab {
   };
 }
 
-function chatWindowStyle(
+function unifiedChatBoxStyle(
   win: ChatWindow,
-  index: number,
   viewport: { width: number; height: number },
 ): CSSProperties {
   if (viewport.width < 768) {
     return {
       left: 12,
       right: 12,
-      bottom: 12 + index * 10,
+      bottom: 12,
       height: "min(76dvh, 640px)",
     };
   }
 
-  const width = win.scopeKind === "result" ? 440 : 560;
-  const height = Math.min(win.scopeKind === "result" ? 590 : 680, viewport.height - 32);
+  const width = 580;
+  const height = Math.min(680, viewport.height - 32);
   let left: number;
   let top: number;
 
@@ -1187,13 +1208,26 @@ function chatWindowStyle(
     if (left < 12) left = Math.max(12, viewport.width - width - 12);
     top = clamp(win.anchorRect.top - 10, 12, viewport.height - height - 12);
   } else {
-    left = viewport.width - width - 16 - index * 22;
-    top = viewport.height - height - 16 - index * 22;
+    left = viewport.width - width - 16;
+    top = viewport.height - height - 16;
     left = clamp(left, 12, viewport.width - width - 12);
     top = clamp(top, 12, viewport.height - height - 12);
   }
 
   return { left, top, width, height };
+}
+
+function mostRecentWindow(windows: ChatWindow[]) {
+  return windows.reduce((latest, win) => (win.updatedAt > latest.updatedAt ? win : latest));
+}
+
+function flattenChatTabs(windows: ChatWindow[]) {
+  return windows.flatMap((win) =>
+    win.tabs.map((tab) => ({
+      win,
+      tab,
+    })),
+  );
 }
 
 function connectorGeometry(win: ChatWindow, style: CSSProperties) {
@@ -1236,6 +1270,13 @@ function clamp(value: number, min: number, max: number) {
 function shortTitle(text: string) {
   const compact = text.replace(/\s+/g, " ").trim();
   return compact.length > 34 ? `${compact.slice(0, 31)}...` : compact || "New tab";
+}
+
+function inferSourceLabel(scopeKind: ClaudeScopeKind, contextMd: string, scopeId: string) {
+  if (scopeKind === "global") return "Global";
+  const issue = contextMd.match(/github\.com\/superkaiba\/explore-persona-space\/issues\/(\d+)/i);
+  if (issue?.[1]) return `Issue #${issue[1]}`;
+  return `Claim ${scopeId.slice(0, 8)}`;
 }
 
 function sidecarSessionId(sessionId: string, windowKey: string, tabId: string) {
@@ -1316,6 +1357,8 @@ function readStoredWindows(storageKey: string): ChatWindow[] {
       .slice(-MAX_STORED_WINDOWS)
       .map((win) => ({
         ...win,
+        sourceLabel:
+          win.sourceLabel ?? inferSourceLabel(win.scopeKind, win.contextMd, win.scopeId),
         open: Boolean(win.open),
         tabs: win.tabs.length > 0 ? win.tabs : [makeTab(1, "")],
       }));

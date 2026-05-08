@@ -318,6 +318,10 @@ function resultAskPayload(result: CleanResult): ClaudeAskPayload {
   return {
     scopeKind: "result",
     scopeId: result.id,
+    sourceLabel:
+      result.githubIssueNumber == null
+        ? `Claim ${result.id.slice(0, 8)}`
+        : `Issue #${result.githubIssueNumber}`,
     scopeTitle: result.title,
     contextMd: resultContext(result),
     suggestedQuestion: "Inspect this result and explain what it means.",
