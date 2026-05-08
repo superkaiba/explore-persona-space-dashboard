@@ -94,7 +94,17 @@ export function ImproveChatWindow() {
       const saved = window.localStorage.getItem(OPEN_KEY);
       setOpen(saved ? saved !== "closed" : window.innerWidth >= 768);
     } catch {}
-    return () => window.removeEventListener("resize", updateMobile);
+    const onOpenEvent = () => {
+      setOpen(true);
+      try {
+        window.localStorage.setItem(OPEN_KEY, "open");
+      } catch {}
+    };
+    window.addEventListener("eps:improve:open", onOpenEvent);
+    return () => {
+      window.removeEventListener("resize", updateMobile);
+      window.removeEventListener("eps:improve:open", onOpenEvent);
+    };
   }, []);
 
   // Re-clamp the frame whenever the viewport size changes so the panel stays

@@ -2,60 +2,234 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --canvas: 250 250 251;        /* page bg */
-  --panel: 255 255 255;         /* card bg */
-  --fg: 17 17 17;
-  --muted: 115 115 122;
-  --border: 226 226 232;
-  --subtle: 244 244 246;
-  --hi: 22 163 74;              /* HIGH confidence */
-  --mod: 234 179 8;             /* MODERATE */
-  --lo: 156 163 175;            /* LOW */
-  --running: 59 130 246;        /* in-progress experiment */
-  --proposed: 139 92 246;       /* proposed todo */
-  --untriaged: 148 163 184;     /* untriaged */
+/* ============================================================
+ *  EPS Dashboard — design tokens
+ *  Dark-first IDE feel, with light theme available via toggle.
+ *  Accent color is customizable via [data-accent] on <html>.
+ * ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  /* layered surfaces (dark) */
+  --canvas: 8 10 14;            /* page background, deepest */
+  --subtle: 14 16 22;           /* first elevation, sunken sections */
+  --panel:  20 23 30;           /* cards / floating surfaces */
+  --raised: 26 30 38;           /* hover / popovers */
+  --border: 38 42 52;
+  --border-strong: 58 64 78;
+
+  --fg:      237 239 244;
+  --fg-soft: 198 202 212;
+  --muted:   132 138 152;
+  --faint:   88 94 106;
+
+  /* status (kept legible across themes) */
+  --hi:        52  211 153;     /* high confidence — emerald */
+  --mod:       245 158  11;     /* moderate — amber */
+  --lo:        148 163 184;     /* low — slate */
+  --running:   96  165 250;     /* in-progress — sky */
+  --proposed:  167 139 250;     /* proposed — violet */
+  --untriaged: 148 163 184;
+
+  --shadow-rgb: 0 0 0;
+  --shadow-strength: 0.5;
+
+  --font-serif: var(--font-instrument-serif), "Instrument Serif",
+                "Iowan Old Style", "Apple Garamond", Palatino, Georgia, serif;
+
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --canvas: 12 12 14;
-    --panel: 22 22 26;
-    --fg: 240 240 244;
-    --muted: 156 163 175;
-    --border: 39 39 44;
-    --subtle: 28 28 32;
-  }
+[data-theme="light"] {
+  --canvas: 249 250 252;
+  --subtle: 243 244 247;
+  --panel:  255 255 255;
+  --raised: 248 249 251;
+  --border: 226 228 234;
+  --border-strong: 200 204 214;
+
+  --fg:      18  20  28;
+  --fg-soft: 56  60  72;
+  --muted:   104 110 124;
+  --faint:   148 154 170;
+
+  --hi:        16  163 74;
+  --mod:       217 119 6;
+  --lo:        148 163 184;
+  --running:   37  99  235;
+  --proposed:  124 58  237;
+  --untriaged: 148 163 184;
+
+  --shadow-rgb: 18 24 38;
+  --shadow-strength: 0.08;
+
+  color-scheme: light;
 }
 
-html, body { background: rgb(var(--canvas)); color: rgb(var(--fg)); }
+/* ============================================================
+ *  Accent palette — switchable via [data-accent] on <html>.
+ *  Each preset is hand-tuned to read well on both themes.
+ * ============================================================ */
+
+:root,
+[data-accent="violet"] {
+  --accent:        139 92  246;
+  --accent-strong: 124 58  237;
+  --accent-soft:   167 139 250;
+  --accent-fg:     255 255 255;
+}
+[data-accent="indigo"] {
+  --accent:        99  102 241;
+  --accent-strong: 79  70  229;
+  --accent-soft:   129 140 248;
+  --accent-fg:     255 255 255;
+}
+[data-accent="sky"] {
+  --accent:        56  189 248;
+  --accent-strong: 14  165 233;
+  --accent-soft:   125 211 252;
+  --accent-fg:     8  20 30;
+}
+[data-accent="emerald"] {
+  --accent:        52  211 153;
+  --accent-strong: 16  185 129;
+  --accent-soft:   110 231 183;
+  --accent-fg:     6  20 14;
+}
+[data-accent="amber"] {
+  --accent:        245 158 11;
+  --accent-strong: 217 119 6;
+  --accent-soft:   252 211 77;
+  --accent-fg:     30 18 4;
+}
+[data-accent="rose"] {
+  --accent:        244 114 182;
+  --accent-strong: 219 39  119;
+  --accent-soft:   249 168 212;
+  --accent-fg:     30 4 16;
+}
+
+/* ============================================================
+ *  Globals
+ * ============================================================ */
+
+html, body {
+  background: rgb(var(--canvas));
+  color: rgb(var(--fg));
+}
 
 body {
   font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
-  letter-spacing: -0.01em;
+  letter-spacing: -0.005em;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Reusable surfaces */
+/* Ambient layers — body::before is the radial accent glow,
+   body::after carries the per-preset texture (grid / scanlines / noise). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20% -20% auto -20%;
+  height: 60vh;
+  background:
+    radial-gradient(ellipse 60% 50% at 30% 0%, rgb(var(--accent) / 0.10), transparent 60%),
+    radial-gradient(ellipse 40% 40% at 80% 0%, rgb(var(--accent-soft) / 0.06), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 600ms ease;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+[data-theme="light"] body::before {
+  opacity: 0.55;
+}
+
+/* selection */
+::selection {
+  background: rgb(var(--accent) / 0.35);
+  color: rgb(var(--fg));
+}
+
+/* scrollbar — subtle, IDE-style */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--border-strong) / 0.7) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-strong) / 0.5);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--border-strong) / 0.85);
+  background-clip: padding-box;
+}
+
+/* focus ring */
+:where(button, a, input, textarea, select, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid rgb(var(--accent) / 0.7);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* ============================================================
+ *  Reusable surface utilities
+ * ============================================================ */
+
 .panel {
-  background: rgb(var(--panel));
+  background: linear-gradient(180deg, rgb(var(--panel)) 0%, rgb(var(--panel) / 0.94) 100%);
   border: 1px solid rgb(var(--border));
-  box-shadow: 0 1px 0 0 rgb(var(--border) / 0.4);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.02),
+    0 1px 2px rgb(var(--shadow-rgb) / calc(var(--shadow-strength) * 0.5));
+  border-radius: 12px;
 }
-.subtle { background: rgb(var(--subtle)); }
+.subtle  { background: rgb(var(--subtle)); }
+.raised  { background: rgb(var(--raised)); }
 
-/* React Flow base override */
+.serif {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+  font-feature-settings: "ss01", "ss02";
+}
+
+/* Soft accent ring used by the brand mark in nav, etc. */
+.accent-ring {
+  box-shadow:
+    0 0 0 1px rgb(var(--accent) / 0.4),
+    0 0 18px -2px rgb(var(--accent) / 0.55);
+}
+
+/* ============================================================
+ *  React Flow tweaks
+ * ============================================================ */
+
 .react-flow__attribution { display: none; }
 .react-flow__minimap {
   background: rgb(var(--panel)) !important;
   border: 1px solid rgb(var(--border)) !important;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 .react-flow__controls {
   background: rgb(var(--panel)) !important;
   border: 1px solid rgb(var(--border)) !important;
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  box-shadow: 0 8px 24px rgb(var(--shadow-rgb) / calc(var(--shadow-strength) * 0.6));
 }
 .react-flow__controls-button {
   background: transparent !important;
@@ -64,74 +238,818 @@ body {
 }
 .react-flow__controls-button:hover { background: rgb(var(--subtle)) !important; }
 
-.react-flow__edge-path { transition: stroke-width 0.15s ease; }
+.react-flow__edge-path { transition: stroke-width 0.18s ease; }
 .react-flow__edge:hover .react-flow__edge-path { stroke-width: 2.5px; }
-
 .react-flow__node { font-family: inherit; }
 
-/* Glow animation for in-progress experiments */
+/* ============================================================
+ *  Animations
+ * ============================================================ */
+
 @keyframes pulse-running {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(59 130 246 / 0.45), 0 1px 2px rgb(0 0 0 / 0.05); }
-  50%      { box-shadow: 0 0 0 8px rgb(59 130 246 / 0), 0 1px 4px rgb(59 130 246 / 0.3); }
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--running) / 0.45), 0 1px 2px rgb(var(--shadow-rgb) / calc(var(--shadow-strength) * 0.5)); }
+  50%      { box-shadow: 0 0 0 8px rgb(var(--running) / 0), 0 1px 4px rgb(var(--running) / 0.3); }
 }
 .glow-running {
   animation: pulse-running 2s ease-in-out infinite;
   border-color: rgb(var(--running)) !important;
 }
 
-/* Loud pulse for cards that need user action — louder ring than glow-running */
 @keyframes pulse-action {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(244 63 94 / 0.55), 0 1px 2px rgb(0 0 0 / 0.06); }
+  0%, 100% { box-shadow: 0 0 0 0 rgb(244 63 94 / 0.55), 0 1px 2px rgb(var(--shadow-rgb) / calc(var(--shadow-strength) * 0.5)); }
   50%      { box-shadow: 0 0 0 6px rgb(244 63 94 / 0), 0 1px 6px rgb(244 63 94 / 0.35); }
 }
 .pulse-action { animation: pulse-action 2.2s ease-in-out infinite; }
 
-/* Subtle slow shimmer for cards that are auto-running so the user sees motion */
 @keyframes shimmer-running {
-  0%, 100% { box-shadow: inset 0 0 0 0 rgb(59 130 246 / 0); }
-  50%      { box-shadow: inset 0 0 18px 0 rgb(59 130 246 / 0.12); }
+  0%, 100% { box-shadow: inset 0 0 0 0 rgb(var(--running) / 0); }
+  50%      { box-shadow: inset 0 0 18px 0 rgb(var(--running) / 0.18); }
 }
 .shimmer-running { animation: shimmer-running 3s ease-in-out infinite; }
 
-/* Category banner pills above kanban columns */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fade-up 180ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+  body::before { display: none; }
+}
+
+/* ============================================================
+ *  Category banners (above kanban columns)
+ * ============================================================ */
+
 .cat-banner {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
-  text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
 }
-.cat-banner-input  { background: rgb(244 63 94); color: white; }
-.cat-banner-run    { background: rgb(37 99 235); color: white; }
-.cat-banner-output { background: rgb(15 118 110); color: white; }
+.cat-banner-input  { background: rgb(244 63 94 / 0.18);  color: rgb(244 114 128); border: 1px solid rgb(244 63 94 / 0.3); }
+.cat-banner-run    { background: rgb(96 165 250 / 0.18); color: rgb(125 188 255); border: 1px solid rgb(96 165 250 / 0.3); }
+.cat-banner-output { background: rgb(52 211 153 / 0.18); color: rgb(110 231 183); border: 1px solid rgb(52 211 153 / 0.3); }
 .cat-banner-input::before  { content: "●"; font-size: 7px; animation: blink 1.4s linear infinite; }
 .cat-banner-run::before    { content: "▶"; font-size: 8px; }
 .cat-banner-output::before { content: "✓"; font-size: 9px; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-/* Markdown / prose tweaks for hover panel */
+[data-theme="light"] .cat-banner-input  { color: rgb(190 18 60); }
+[data-theme="light"] .cat-banner-run    { color: rgb(29 78 216); }
+[data-theme="light"] .cat-banner-output { color: rgb(4 120 87); }
+
+/* ============================================================
+ *  Markdown / prose tweaks for hover panel
+ * ============================================================ */
+
 .prose-tight :where(h1, h2, h3) { margin-top: 1em; margin-bottom: 0.4em; line-height: 1.3; }
-.prose-tight :where(h1) { font-size: 1.1rem; font-weight: 600; }
-.prose-tight :where(h2) { font-size: 1rem; font-weight: 600; }
-.prose-tight :where(h3) { font-size: 0.92rem; font-weight: 600; color: rgb(var(--muted)); text-transform: uppercase; letter-spacing: 0.04em; }
-.prose-tight :where(p) { margin: 0.45em 0; line-height: 1.55; }
-.prose-tight :where(ul, ol) { margin: 0.4em 0; padding-left: 1.2em; }
-.prose-tight :where(li) { margin: 0.15em 0; }
-.prose-tight :where(strong) { font-weight: 600; }
-.prose-tight :where(table) { font-size: 0.78rem; margin: 0.6em 0; border-collapse: collapse; }
-.prose-tight :where(th, td) { padding: 0.3em 0.5em; border: 1px solid rgb(var(--border)); }
+.prose-tight :where(h1) { font-size: 1.15rem; font-weight: 600; letter-spacing: -0.015em; }
+.prose-tight :where(h2) { font-size: 1.02rem; font-weight: 600; letter-spacing: -0.01em; }
+.prose-tight :where(h3) { font-size: 0.92rem; font-weight: 600; color: rgb(var(--muted)); text-transform: uppercase; letter-spacing: 0.06em; }
+.prose-tight :where(p) { margin: 0.5em 0; line-height: 1.6; color: rgb(var(--fg-soft)); }
+.prose-tight :where(ul, ol) { margin: 0.45em 0; padding-left: 1.25em; }
+.prose-tight :where(li) { margin: 0.18em 0; color: rgb(var(--fg-soft)); }
+.prose-tight :where(strong) { font-weight: 600; color: rgb(var(--fg)); }
+.prose-tight :where(table) { font-size: 0.82rem; margin: 0.7em 0; border-collapse: collapse; }
+.prose-tight :where(th, td) { padding: 0.35em 0.55em; border: 1px solid rgb(var(--border)); }
 .prose-tight :where(th) { background: rgb(var(--subtle)); font-weight: 600; text-align: left; }
 .prose-tight :where(code):not(:where(pre code)) {
-  background: rgb(var(--subtle)); border-radius: 4px; padding: 0.05em 0.3em;
-  font-family: var(--font-mono), ui-monospace, monospace; font-size: 0.85em;
+  background: rgb(var(--subtle)); border-radius: 4px; padding: 0.05em 0.35em;
+  font-family: var(--font-geist-mono), ui-monospace, monospace; font-size: 0.86em;
+  border: 1px solid rgb(var(--border));
 }
 .prose-tight :where(pre) {
   background: rgb(var(--subtle)); border: 1px solid rgb(var(--border));
-  border-radius: 6px; padding: 0.6em 0.8em; font-size: 0.78rem; overflow-x: auto;
+  border-radius: 8px; padding: 0.7em 0.9em; font-size: 0.8rem; overflow-x: auto;
 }
-.prose-tight :where(img) { border: 1px solid rgb(var(--border)); border-radius: 6px; margin: 0.5em 0; }
-.prose-tight :where(a) { color: rgb(37 99 235); text-decoration: underline; text-underline-offset: 2px; }
-.prose-tight :where(a:hover) { color: rgb(29 78 216); }
+.prose-tight :where(img) { border: 1px solid rgb(var(--border)); border-radius: 8px; margin: 0.6em 0; }
+.prose-tight :where(a) {
+  color: rgb(var(--accent)); text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: rgb(var(--accent) / 0.4);
+  transition: color 150ms ease, text-decoration-color 150ms ease;
+}
+.prose-tight :where(a:hover) { color: rgb(var(--accent-strong)); text-decoration-color: rgb(var(--accent-strong)); }
 .prose-tight :where(blockquote) {
-  margin: 0.5em 0; padding-left: 0.8em;
-  border-left: 3px solid rgb(var(--border)); color: rgb(var(--muted));
+  margin: 0.6em 0; padding: 0.2em 0 0.2em 0.9em;
+  border-left: 3px solid rgb(var(--accent) / 0.6); color: rgb(var(--muted));
+  background: rgb(var(--accent) / 0.04); border-radius: 0 6px 6px 0;
 }
-.prose-tight :where(hr) { margin: 1em 0; border-color: rgb(var(--border)); }
+.prose-tight :where(hr) { margin: 1.1em 0; border-color: rgb(var(--border)); }
+
+/* ============================================================
+ *  Design presets
+ *  Each preset is self-contained — picks character via [data-preset].
+ * ============================================================ */
+
+/* ----- EDITORIAL: paper, serif numerals, light accents ----- */
+[data-preset="editorial"] body {
+  font-feature-settings: "ss01", "salt", "kern", "cv11";
+  letter-spacing: -0.005em;
+}
+[data-preset="editorial"] body::after {
+  /* Faint paper grain */
+  background-image:
+    radial-gradient(rgb(var(--fg) / 0.025) 1px, transparent 1.2px);
+  background-size: 3px 3px;
+  opacity: 1;
+}
+[data-preset="editorial"] .panel {
+  border-radius: 14px;
+  border-color: rgb(var(--border) / 0.8);
+}
+[data-preset="editorial"] h1,
+[data-preset="editorial"] h2 {
+  letter-spacing: -0.02em;
+}
+
+/* ----- TERMINAL: scanlines, dot grid, monospace metadata ----- */
+[data-preset="terminal"] body {
+  font-feature-settings: "tnum", "zero", "ss02";
+}
+[data-preset="terminal"] body::before {
+  /* tighter, lower ambient — terminal is matter-of-fact */
+  background:
+    radial-gradient(ellipse 50% 40% at 50% 0%, rgb(var(--accent) / 0.07), transparent 60%);
+}
+[data-preset="terminal"] body::after {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgb(var(--fg) / 0.03) 0 1px,
+      transparent 1px 3px
+    ),
+    radial-gradient(rgb(var(--fg) / 0.05) 1px, transparent 1px);
+  background-size: 100% 3px, 24px 24px;
+  background-position: 0 0, 0 0;
+  opacity: 0.7;
+}
+[data-preset="terminal"] .panel {
+  border-radius: 6px;
+  border-color: rgb(var(--border-strong) / 0.7);
+}
+[data-preset="terminal"] [class*="rounded-xl"],
+[data-preset="terminal"] [class*="rounded-2xl"] {
+  border-radius: 6px !important;
+}
+[data-preset="terminal"] [class*="rounded-lg"] {
+  border-radius: 6px !important;
+}
+[data-preset="terminal"] [class*="rounded-md"] {
+  border-radius: 4px !important;
+}
+
+/* ----- AURORA: animated multi-color glow, dot grid, motion ----- */
+[data-preset="aurora"] body::before {
+  background:
+    radial-gradient(ellipse 55% 45% at 20% 0%, rgb(var(--accent) / 0.18), transparent 60%),
+    radial-gradient(ellipse 45% 40% at 75% 0%, rgb(var(--accent-soft) / 0.16), transparent 60%),
+    radial-gradient(ellipse 35% 35% at 50% 8%, rgb(var(--running) / 0.10), transparent 65%);
+  animation: aurora-drift 18s ease-in-out infinite alternate;
+}
+@keyframes aurora-drift {
+  0%   { transform: translate3d(0, 0, 0); filter: hue-rotate(0deg); }
+  100% { transform: translate3d(2%, 0.5%, 0); filter: hue-rotate(8deg); }
+}
+[data-preset="aurora"] body::after {
+  background-image:
+    radial-gradient(rgb(var(--fg) / 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.5;
+  mask-image: linear-gradient(180deg, black 0%, black 70%, transparent 100%);
+}
+[data-preset="aurora"] .panel {
+  border-radius: 14px;
+}
+
+/* ----- BRUTALIST: hard borders, heavy weights, almost no rounding ----- */
+[data-preset="brutalist"] body {
+  font-feature-settings: "tnum", "ss01";
+}
+[data-preset="brutalist"] body::before {
+  /* No ambient blur — flat block of accent up top */
+  background: linear-gradient(180deg, rgb(var(--accent) / 0.15) 0%, transparent 18%);
+  height: 30vh;
+}
+[data-preset="brutalist"] body::after {
+  background-image:
+    linear-gradient(rgb(var(--fg) / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--fg) / 0.04) 1px, transparent 1px);
+  background-size: 32px 32px, 32px 32px;
+  opacity: 0.7;
+}
+[data-preset="brutalist"] .panel {
+  border-radius: 4px;
+  border-width: 2px;
+  border-color: rgb(var(--fg) / 0.85);
+  box-shadow: 4px 4px 0 0 rgb(var(--fg) / 0.85);
+  background: rgb(var(--panel));
+}
+[data-preset="brutalist"] [class*="rounded-xl"],
+[data-preset="brutalist"] [class*="rounded-2xl"],
+[data-preset="brutalist"] [class*="rounded-lg"],
+[data-preset="brutalist"] [class*="rounded-md"] {
+  border-radius: 2px !important;
+}
+[data-preset="brutalist"] [class*="rounded-full"] {
+  border-radius: 2px !important;
+}
+[data-preset="brutalist"] h1, [data-preset="brutalist"] h2 {
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+[data-preset="brutalist"] .text-muted,
+[data-preset="brutalist"] .text-fg {
+  letter-spacing: 0.005em;
+}
+
+/* ============================================================
+ *  Card hairline + type-coded rail (used by aurora preset
+ *  but available everywhere via the .card-hairline / .card-kind-* classes)
+ * ============================================================ */
+
+.card-hairline {
+  position: relative;
+}
+.card-hairline::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(var(--accent) / 0.5) 50%,
+    transparent
+  );
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+[data-preset="aurora"] .card-hairline::before { opacity: 0.9; }
+[data-preset="editorial"] .card-hairline::before {
+  opacity: 0.5;
+  background: linear-gradient(90deg, transparent, rgb(var(--fg) / 0.2) 50%, transparent);
+}
+
+.card-kind {
+  position: relative;
+  overflow: hidden;
+}
+.card-kind::after {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--kind-color, rgb(var(--accent)));
+  opacity: 0.85;
+  transition: opacity 200ms ease, width 200ms ease;
+}
+.card-kind:hover::after { opacity: 1; width: 3px; }
+[data-preset="terminal"] .card-kind::after { width: 3px; opacity: 0.9; }
+[data-preset="brutalist"] .card-kind::after { width: 4px; opacity: 1; }
+
+.kind-lit       { --kind-color: rgb(var(--running)); }
+.kind-link      { --kind-color: rgb(var(--proposed)); }
+.kind-task      { --kind-color: rgb(var(--mod)); }
+.kind-idea      { --kind-color: rgb(var(--hi)); }
+.kind-experiment{ --kind-color: rgb(244 114 182); }
+
+/* ============================================================
+ *  Stagger fade-up — applied to children of .stagger-list
+ * ============================================================ */
+
+.stagger-list > * {
+  animation: fade-up 320ms ease-out both;
+}
+.stagger-list > *:nth-child(1) { animation-delay: 0ms;   }
+.stagger-list > *:nth-child(2) { animation-delay: 40ms;  }
+.stagger-list > *:nth-child(3) { animation-delay: 80ms;  }
+.stagger-list > *:nth-child(4) { animation-delay: 120ms; }
+.stagger-list > *:nth-child(5) { animation-delay: 160ms; }
+.stagger-list > *:nth-child(6) { animation-delay: 200ms; }
+.stagger-list > *:nth-child(7) { animation-delay: 240ms; }
+.stagger-list > *:nth-child(8) { animation-delay: 280ms; }
+
+/* ============================================================
+ *  Small accent pulse used for "live" indicators
+ * ============================================================ */
+
+@keyframes accent-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--accent) / 0.5); }
+  50%      { box-shadow: 0 0 0 6px rgb(var(--accent) / 0); }
+}
+.live-dot {
+  display: inline-block;
+  width: 6px; height: 6px; border-radius: 999px;
+  background: rgb(var(--accent));
+  animation: accent-pulse 1.8s ease-out infinite;
+}
+
+/* Improvement-bubble dot animations */
+@keyframes pulse-attention {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--accent) / 0.7); transform: scale(1); }
+  50%      { box-shadow: 0 0 0 5px rgb(var(--accent) / 0); transform: scale(1.15); }
+}
+.animate-pulse-attention {
+  animation: pulse-attention 1.4s ease-out infinite;
+}
+@keyframes shimmer-bubble {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--running) / 0.4); }
+  50%      { box-shadow: 0 0 0 4px rgb(var(--running) / 0); }
+}
+.shimmer-bubble {
+  animation: shimmer-bubble 2.2s ease-out infinite;
+}
+
+/* keyboard hint pill */
+.kbd {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px; font-weight: 500;
+  padding: 1px 5px; border-radius: 4px;
+  background: rgb(var(--subtle));
+  border: 1px solid rgb(var(--border));
+  color: rgb(var(--muted));
+}
+
+/* ============================================================
+ *  VAPORWAVE — sunset gradient, perspective grid floor, chrome cards
+ * ============================================================ */
+
+[data-preset="vaporwave"] {
+  --canvas: 18 6 28;
+  --subtle: 30 12 50;
+  --panel: 38 16 64;
+  --raised: 50 24 80;
+  --border: 124 58 237;
+  --border-strong: 236 72 153;
+  --fg: 250 232 255;
+  --fg-soft: 232 200 250;
+  --muted: 192 144 220;
+  --faint: 140 100 170;
+}
+[data-theme="light"][data-preset="vaporwave"] {
+  --canvas: 252 232 246;
+  --subtle: 248 220 240;
+  --panel: 255 244 252;
+  --raised: 252 226 244;
+  --border: 236 72 153;
+  --border-strong: 124 58 237;
+  --fg: 76 24 96;
+  --fg-soft: 100 32 124;
+  --muted: 158 80 168;
+  --faint: 200 130 200;
+}
+[data-preset="vaporwave"] body::before {
+  /* sunset bands */
+  background:
+    linear-gradient(180deg,
+      rgb(255 105 180 / 0.5) 0%,
+      rgb(255 154 60 / 0.35) 12%,
+      rgb(255 215 100 / 0.18) 22%,
+      transparent 35%
+    ),
+    radial-gradient(ellipse 60% 18% at 50% 32%, rgb(255 200 90 / 0.55), transparent 60%);
+  height: 70vh;
+  inset: 0 0 auto 0;
+}
+[data-preset="vaporwave"] body::after {
+  /* perspective grid floor */
+  background-image:
+    linear-gradient(rgb(0 255 255 / 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 64 200 / 0.4) 1px, transparent 1px);
+  background-size: 80px 60px, 80px 60px;
+  background-position: center bottom, center bottom;
+  inset: auto 0 0 0;
+  height: 50vh;
+  transform: perspective(420px) rotateX(60deg);
+  transform-origin: bottom;
+  mask-image: linear-gradient(180deg, transparent 0%, black 60%, black 100%);
+  opacity: 0.85;
+}
+[data-preset="vaporwave"] .panel,
+[data-preset="vaporwave"] [class*="border-border"] {
+  border-color: rgb(236 72 153 / 0.45);
+}
+[data-preset="vaporwave"] .panel {
+  background:
+    linear-gradient(180deg, rgb(50 24 80 / 0.7), rgb(30 12 50 / 0.8));
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 200 240 / 0.15),
+    0 0 0 1px rgb(0 255 255 / 0.08),
+    0 8px 28px rgb(236 72 153 / 0.18);
+  border-radius: 14px;
+}
+[data-preset="vaporwave"] .vapor-chrome {
+  background: linear-gradient(135deg,
+    #ffd6f5 0%, #ffffff 18%, #cabffc 38%, #6f7fff 58%, #ff85c0 78%, #ffd6f5 100%);
+  background-size: 200% 200%;
+  animation: chrome-shift 6s ease-in-out infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgb(255 100 200 / 0.4));
+}
+@keyframes chrome-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+/* ============================================================
+ *  GLITCH — RGB-split, cyberpunk neon, corner brackets
+ * ============================================================ */
+
+[data-preset="glitch"] {
+  --canvas: 4 6 8;
+  --subtle: 10 14 18;
+  --panel: 14 18 24;
+  --raised: 22 28 38;
+  --border: 0 255 200;
+  --border-strong: 255 0 128;
+  --fg: 220 255 240;
+  --fg-soft: 180 240 220;
+  --muted: 110 200 170;
+  --faint: 80 120 100;
+}
+[data-preset="glitch"] body::before {
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 0%, rgb(255 0 128 / 0.18), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 0%, rgb(0 255 200 / 0.18), transparent 60%);
+}
+[data-preset="glitch"] body::after {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgb(0 255 200 / 0.04) 0 1px,
+      transparent 1px 2px,
+      rgb(255 0 128 / 0.03) 2px 3px,
+      transparent 3px 4px
+    );
+  opacity: 1;
+}
+[data-preset="glitch"] .panel,
+[data-preset="glitch"] [class*="rounded-xl"][class*="border-border"] {
+  border-radius: 0;
+  border: 1px solid rgb(0 255 200 / 0.3);
+  background: rgb(10 14 18 / 0.85);
+  box-shadow:
+    -1px 0 0 0 rgb(255 0 128 / 0.4),
+    1px 0 0 0 rgb(0 255 200 / 0.4);
+  position: relative;
+}
+[data-preset="glitch"] .panel::before,
+[data-preset="glitch"] [class*="rounded-xl"][class*="border-border"]::before {
+  content: ""; position: absolute;
+  top: -1px; left: -1px; right: -1px; bottom: -1px;
+  border-top: 1px solid rgb(0 255 200 / 0.5);
+  border-bottom: 1px solid rgb(255 0 128 / 0.5);
+  pointer-events: none;
+}
+@keyframes rgb-glitch {
+  0%, 100% { text-shadow: 1px 0 0 rgb(255 0 128 / 0.7), -1px 0 0 rgb(0 255 200 / 0.7); }
+  20%      { text-shadow: 2px 1px 0 rgb(255 0 128 / 0.7), -2px -1px 0 rgb(0 255 200 / 0.7); }
+  40%      { text-shadow: -1px 0 0 rgb(255 0 128 / 0.7), 1px 0 0 rgb(0 255 200 / 0.7); }
+  60%      { text-shadow: 1px -1px 0 rgb(255 0 128 / 0.7), -1px 1px 0 rgb(0 255 200 / 0.7); }
+  80%      { text-shadow: 0 0 0 rgb(255 0 128 / 0.7), 0 0 0 rgb(0 255 200 / 0.7); }
+}
+.glitch-text {
+  animation: rgb-glitch 2.4s steps(1, end) infinite;
+}
+[data-preset="glitch"] .accent-ring,
+[data-preset="glitch"] [class*="rounded-md"],
+[data-preset="glitch"] [class*="rounded-lg"],
+[data-preset="glitch"] [class*="rounded-xl"],
+[data-preset="glitch"] [class*="rounded-full"] {
+  border-radius: 0 !important;
+}
+
+/* corner brackets utility, applied via .corner-brackets */
+.corner-brackets { position: relative; }
+.corner-brackets::before, .corner-brackets::after,
+.corner-brackets > .cb-tr, .corner-brackets > .cb-bl {
+  content: "";
+  position: absolute; width: 10px; height: 10px;
+  border-color: rgb(var(--border));
+  border-style: solid;
+}
+.corner-brackets::before { top: -1px; left: -1px;   border-width: 1px 0 0 1px; }
+.corner-brackets::after  { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+
+/* ============================================================
+ *  SUMI-E — paper canvas, ink wash, sparse
+ * ============================================================ */
+
+[data-preset="sumie"] {
+  --canvas: 240 232 218;
+  --subtle: 232 224 210;
+  --panel: 248 242 230;
+  --raised: 244 236 222;
+  --border: 60 50 40;
+  --border-strong: 30 25 20;
+  --fg: 28 22 16;
+  --fg-soft: 60 50 40;
+  --muted: 110 96 78;
+  --faint: 158 144 124;
+  color-scheme: light;
+}
+[data-theme="dark"][data-preset="sumie"] {
+  --canvas: 26 22 18;
+  --subtle: 36 30 24;
+  --panel: 44 38 30;
+  --raised: 56 48 38;
+  --border: 200 188 170;
+  --border-strong: 240 232 218;
+  --fg: 248 240 222;
+  --fg-soft: 220 208 190;
+  --muted: 160 148 130;
+  --faint: 110 98 84;
+  color-scheme: dark;
+}
+[data-preset="sumie"] body::before {
+  /* faint ink wash */
+  background:
+    radial-gradient(ellipse 80% 50% at 30% 0%, rgb(60 50 40 / 0.15), transparent 65%),
+    radial-gradient(ellipse 50% 40% at 80% 5%, rgb(60 50 40 / 0.08), transparent 70%);
+  height: 80vh;
+}
+[data-theme="dark"][data-preset="sumie"] body::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 30% 0%, rgb(248 240 222 / 0.06), transparent 65%);
+}
+[data-preset="sumie"] body::after {
+  background-image:
+    radial-gradient(rgb(60 50 40 / 0.06) 0.6px, transparent 0.8px);
+  background-size: 4px 4px;
+  opacity: 1;
+}
+[data-preset="sumie"] .panel {
+  background: rgb(var(--panel));
+  border: 1px solid rgb(var(--border) / 0.25);
+  border-radius: 2px;
+  box-shadow: 1px 1px 0 0 rgb(var(--border) / 0.18);
+}
+[data-preset="sumie"] [class*="rounded-xl"],
+[data-preset="sumie"] [class*="rounded-2xl"],
+[data-preset="sumie"] [class*="rounded-lg"],
+[data-preset="sumie"] [class*="rounded-md"] {
+  border-radius: 2px !important;
+}
+[data-preset="sumie"] [class*="rounded-full"] {
+  border-radius: 999px !important;
+}
+[data-preset="sumie"] .ink-stroke {
+  display: inline-block;
+  width: 36px; height: 4px;
+  background: linear-gradient(90deg, transparent, rgb(var(--fg)) 30%, rgb(var(--fg)) 70%, transparent);
+  border-radius: 999px;
+  filter: blur(0.5px);
+}
+
+/* ============================================================
+ *  MISSION CONTROL — orange-on-black telemetry, brackets, dense
+ * ============================================================ */
+
+[data-preset="mission"] {
+  --canvas: 6 8 10;
+  --subtle: 12 14 18;
+  --panel: 16 20 24;
+  --raised: 24 28 34;
+  --border: 80 70 60;
+  --border-strong: 255 138 0;
+  --fg: 255 200 130;
+  --fg-soft: 240 180 110;
+  --muted: 180 140 90;
+  --faint: 110 88 60;
+  /* hard-pin accent to mission-control orange regardless of selected accent */
+  --accent: 255 138 0;
+  --accent-strong: 255 90 0;
+  --accent-soft: 255 180 80;
+  --accent-fg: 0 0 0;
+}
+[data-preset="mission"] body::before {
+  background:
+    repeating-linear-gradient(0deg, rgb(255 138 0 / 0.05) 0 1px, transparent 1px 4px),
+    radial-gradient(ellipse 60% 30% at 50% 0%, rgb(255 138 0 / 0.1), transparent 60%);
+}
+[data-preset="mission"] body::after {
+  background-image:
+    linear-gradient(rgb(255 138 0 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 138 0 / 0.05) 1px, transparent 1px);
+  background-size: 16px 16px, 16px 16px;
+  opacity: 0.6;
+}
+[data-preset="mission"] .panel,
+[data-preset="mission"] [class*="rounded-xl"][class*="border-border"] {
+  border-radius: 0;
+  border: 1px solid rgb(255 138 0 / 0.35);
+  background:
+    linear-gradient(180deg, rgb(16 20 24 / 0.95), rgb(8 10 12 / 0.95));
+  box-shadow:
+    inset 0 0 0 1px rgb(255 138 0 / 0.08);
+}
+[data-preset="mission"] [class*="rounded-md"],
+[data-preset="mission"] [class*="rounded-lg"],
+[data-preset="mission"] [class*="rounded-full"] {
+  border-radius: 0 !important;
+}
+[data-preset="mission"] {
+  font-feature-settings: "tnum", "zero", "ss02";
+}
+
+/* VFD-style large numerals */
+.vfd {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-feature-settings: "tnum", "zero";
+  letter-spacing: 0.04em;
+  color: rgb(255 138 0);
+  text-shadow: 0 0 4px rgb(255 138 0 / 0.7), 0 0 12px rgb(255 138 0 / 0.45);
+}
+
+/* a thin horizontal scrolling ticker — used in mission preset */
+@keyframes ticker-scroll {
+  0%   { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+.ticker {
+  display: flex; gap: 2rem; white-space: nowrap;
+  animation: ticker-scroll 40s linear infinite;
+}
+
+/* ============================================================
+ *  NOIR — pure black, radical reduction, near-invisible chrome
+ * ============================================================ */
+
+[data-preset="noir"] {
+  --canvas: 0 0 0;
+  --subtle: 6 6 6;
+  --panel: 10 10 10;
+  --raised: 14 14 14;
+  --border: 32 32 32;
+  --border-strong: 60 60 60;
+  --fg: 232 232 232;
+  --fg-soft: 200 200 200;
+  --muted: 130 130 130;
+  --faint: 80 80 80;
+  /* accent locked to white-on-black; ignore picker */
+  --accent: 245 245 245;
+  --accent-strong: 255 255 255;
+  --accent-soft: 230 230 230;
+  --accent-fg: 0 0 0;
+  color-scheme: dark;
+}
+[data-theme="light"][data-preset="noir"] {
+  --canvas: 255 255 255;
+  --subtle: 250 250 250;
+  --panel: 252 252 252;
+  --raised: 248 248 248;
+  --border: 224 224 224;
+  --border-strong: 200 200 200;
+  --fg: 16 16 16;
+  --fg-soft: 40 40 40;
+  --muted: 116 116 116;
+  --faint: 170 170 170;
+  --accent: 16 16 16;
+  --accent-strong: 0 0 0;
+  --accent-soft: 60 60 60;
+  --accent-fg: 255 255 255;
+  color-scheme: light;
+}
+[data-preset="noir"] body::before {
+  /* No ambient glow — noir means stillness */
+  display: none;
+}
+[data-preset="noir"] body::after {
+  /* No texture either */
+  display: none;
+}
+[data-preset="noir"] .panel,
+[data-preset="noir"] [class*="rounded-xl"][class*="border-border"] {
+  background: rgb(var(--panel));
+  border: 1px solid rgb(var(--border));
+  border-radius: 4px;
+  box-shadow: none;
+}
+[data-preset="noir"] [class*="rounded-md"],
+[data-preset="noir"] [class*="rounded-lg"],
+[data-preset="noir"] [class*="rounded-xl"] {
+  border-radius: 4px !important;
+}
+[data-preset="noir"] [class*="rounded-full"] {
+  border-radius: 999px !important;
+}
+[data-preset="noir"] .accent-ring {
+  box-shadow: 0 0 0 1px rgb(var(--border-strong));
+}
+/* In noir, the active sidebar accent rail becomes a soft white line, not a saturated color */
+[data-preset="noir"] .card-kind::after { display: none; }
+[data-preset="noir"] .card-hairline::before { display: none; }
+
+/* ============================================================
+ *  NEWSPRINT — paper, black-on-cream, broadsheet rules, halftone
+ * ============================================================ */
+
+[data-preset="newsprint"] {
+  --canvas: 244 240 232;
+  --subtle: 236 230 218;
+  --panel: 250 246 238;
+  --raised: 240 234 222;
+  --border: 24 22 20;
+  --border-strong: 0 0 0;
+  --fg: 16 14 12;
+  --fg-soft: 38 34 30;
+  --muted: 90 82 72;
+  --faint: 138 128 114;
+  /* black accent, ignores picker — newsprint is monochrome */
+  --accent: 16 14 12;
+  --accent-strong: 0 0 0;
+  --accent-soft: 60 54 48;
+  --accent-fg: 244 240 232;
+  color-scheme: light;
+}
+[data-theme="dark"][data-preset="newsprint"] {
+  --canvas: 18 16 14;
+  --subtle: 26 24 22;
+  --panel: 32 30 26;
+  --raised: 40 36 32;
+  --border: 220 214 200;
+  --border-strong: 244 240 232;
+  --fg: 244 240 232;
+  --fg-soft: 220 214 200;
+  --muted: 168 160 144;
+  --faint: 110 102 88;
+  --accent: 244 240 232;
+  --accent-strong: 255 252 244;
+  --accent-soft: 220 214 200;
+  --accent-fg: 18 16 14;
+  color-scheme: dark;
+}
+[data-preset="newsprint"] body::before {
+  /* No ambient glow — broadsheet is flat ink */
+  display: none;
+}
+[data-preset="newsprint"] body::after {
+  /* halftone dot screen — very faint */
+  background-image: radial-gradient(rgb(var(--fg) / 0.08) 1px, transparent 1.4px);
+  background-size: 4px 4px;
+  opacity: 0.55;
+}
+[data-preset="newsprint"] {
+  font-feature-settings: "kern", "liga", "onum";
+}
+[data-preset="newsprint"] .panel,
+[data-preset="newsprint"] [class*="rounded-xl"][class*="border-border"] {
+  background: rgb(var(--panel));
+  border: 1px solid rgb(var(--fg) / 0.85);
+  border-radius: 0;
+  box-shadow: none;
+}
+[data-preset="newsprint"] [class*="rounded-xl"],
+[data-preset="newsprint"] [class*="rounded-2xl"],
+[data-preset="newsprint"] [class*="rounded-lg"],
+[data-preset="newsprint"] [class*="rounded-md"] {
+  border-radius: 0 !important;
+}
+[data-preset="newsprint"] [class*="rounded-full"] {
+  border-radius: 999px !important;
+}
+/* card hairline on newsprint becomes a top double-rule */
+[data-preset="newsprint"] .card-hairline::before {
+  height: 4px;
+  background:
+    linear-gradient(180deg,
+      rgb(var(--fg)) 0 1px,
+      transparent 1px 3px,
+      rgb(var(--fg)) 3px 4px
+    );
+  opacity: 1;
+}
+/* type-coded rails become solid black with a small label notch on hover */
+[data-preset="newsprint"] .card-kind::after {
+  background: rgb(var(--fg)); width: 3px; opacity: 1;
+}
+
+/* a horizontal newspaper rule with a centered diamond/dot */
+.news-rule {
+  display: flex; align-items: center; gap: 8px;
+  color: rgb(var(--fg));
+}
+.news-rule::before, .news-rule::after {
+  content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(var(--fg)) 20%, rgb(var(--fg)) 80%, transparent);
+}
+
+/* drop cap utility for newsprint — apply to a paragraph */
+.dropcap::first-letter {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 3.4em;
+  float: left;
+  line-height: 0.85;
+  margin: 0.1em 0.12em 0 0;
+  color: rgb(var(--fg));
+}

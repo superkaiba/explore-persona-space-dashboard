@@ -11,17 +11,17 @@ export function ChatRail() {
 
   return (
     <aside
-      className="flex h-full flex-col border-l border-border bg-panel transition-[width] duration-200"
-      style={{ width: open ? 440 : 44 }}
+      className="flex h-full flex-col border-l border-border bg-panel/60 backdrop-blur transition-[width] duration-300 ease-soft"
+      style={{ width: open ? 460 : 48 }}
     >
-      <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         {open && (
           <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium tracking-tight">
-            <span className="grid h-5 w-5 place-items-center rounded bg-fg text-canvas">
+            <span className="accent-ring grid h-6 w-6 place-items-center rounded bg-gradient-to-br from-accent to-accent-strong text-accent-fg">
               <Sparkles className="h-3 w-3" />
             </span>
-            <span>Claude</span>
-            <span className="rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium tracking-wider text-running">
+            <span className="serif text-[16px] italic leading-none">Claude</span>
+            <span className="rounded-full border border-running/30 bg-running/10 px-1.5 py-0.5 font-mono text-[9px] font-medium tracking-wider text-running">
               opus 4.7
             </span>
           </div>
@@ -29,7 +29,7 @@ export function ChatRail() {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="rounded-md p-1 text-muted transition-colors hover:bg-subtle hover:text-fg"
+          className="rounded-md p-1.5 text-muted transition-all duration-200 ease-soft hover:bg-subtle hover:text-fg"
           aria-label={open ? "Collapse chat" : "Expand chat"}
         >
           {open ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
