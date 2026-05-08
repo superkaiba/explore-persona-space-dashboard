@@ -81,6 +81,7 @@ type ClaudeThreadProps = {
 type AgentRun = {
   id: string;
   mode: AgentRunMode;
+  sandboxPreview: boolean;
   status: AgentRunStatus;
   productionUrl: string | null;
 };
@@ -96,6 +97,7 @@ function runUpdateSql(runId: string, status: AgentRunStatus, eventType: string, 
 function improvementDispatchPrompt(
   request: string,
   mode: AgentRunMode,
+  sandboxPreview: boolean,
   run: AgentRun | null,
 ) {
   const runId = run?.id ?? "untracked";
@@ -132,13 +134,14 @@ General rules:
     return `${shared}
 
 Mode: CLARIFY.
+Preview policy for the eventual implementation: ${sandboxPreview ? "sandbox preview before production" : "direct production apply after clarification"}.
 Inspect the repo enough to ask precise questions, but do not edit files, run formatters, commit, push, or deploy. Ask only the questions needed to make the implementation decision-complete.`;
   }
 
-  if (mode === "sandbox_preview") {
+  if (sandboxPreview) {
     return `${shared}
 
-Mode: SANDBOX PREVIEW.
+Mode: DIRECT APPLY, WITH SANDBOX PREVIEW FIRST.
 Do not change the main checkout. Create an isolated git worktree under /home/thomasjiralerspong/eps-dashboard-runs/${runId}. Implement there, start a preview server on an available 31xx port bound to 0.0.0.0, and report both:
 - Production: ${productionUrl}
 - Preview: http://35.226.138.62:<port>
@@ -221,6 +224,7 @@ export function ClaudeThread({
   const [pending, setPending] = useState(false);
   const [creating, setCreating] = useState(false);
   const [agentMode, setAgentMode] = useState<AgentRunMode>("direct_apply");
+  const [sandboxPreview, setSandboxPreview] = useState(false);
   const skipNextLoadRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -321,13 +325,14 @@ export function ClaudeThread({
 
   async function createAgentRun(
     mode: AgentRunMode,
+    previewFirst: boolean,
     request: string,
     chatSessionId: string,
   ): Promise<AgentRun | null> {
     const r = await fetch("/api/agent-runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, request, chatSessionId }),
+      body: JSON.stringify({ mode, sandboxPreview: previewFirst, request, chatSessionId }),
     });
     if (!r.ok) return null;
     const j = (await r.json()) as { run: AgentRun };
@@ -395,6 +400,7 @@ export function ClaudeThread({
     let cleanupSidecarSession: { id: string; sidecarUrl: string; token: string } | null = null;
     let runForRequest: AgentRun | null = null;
     const agentModeForRequest = agentMode;
+    const sandboxPreviewForRequest = sandboxPreview;
 
     let session = activeSession;
     if (!session) {
@@ -443,7 +449,12 @@ export function ClaudeThread({
     try {
       await persistUser(session.id, text);
       if (kind === "improve") {
-        runForRequest = await createAgentRun(agentModeForRequest, text, session.id);
+        runForRequest = await createAgentRun(
+          agentModeForRequest,
+          sandboxPreviewForRequest,
+          text,
+          session.id,
+        );
         if (!runForRequest) {
           updateAssistant((m) => {
             m.blocks.push({
@@ -485,7 +496,12 @@ export function ClaudeThread({
       }
       const agentText =
         kind === "improve"
-          ? improvementDispatchPrompt(text, agentModeForRequest, runForRequest)
+          ? improvementDispatchPrompt(
+              text,
+              agentModeForRequest,
+              sandboxPreviewForRequest,
+              runForRequest,
+            )
           : text;
       const res = await fetch(`${sidecarUrl}/chat`, {
         method: "POST",
@@ -607,17 +623,17 @@ export function ClaudeThread({
                 if (runForRequest) {
                   void patchAgentRun(runForRequest.id, {
                     status:
-                      agentModeForRequest === "sandbox_preview"
+                      agentModeForRequest === "direct_apply" && sandboxPreviewForRequest
                         ? "awaiting_approval"
                         : "completed",
                     summary: finalText || null,
                     event: {
                       type:
-                        agentModeForRequest === "sandbox_preview"
+                        agentModeForRequest === "direct_apply" && sandboxPreviewForRequest
                           ? "awaiting_approval"
                           : "completed",
                       body:
-                        agentModeForRequest === "sandbox_preview"
+                        agentModeForRequest === "direct_apply" && sandboxPreviewForRequest
                           ? "Sandbox agent finished and is awaiting approval."
                           : "Agent stream finished.",
                     },
@@ -788,7 +804,7 @@ export function ClaudeThread({
 
       {kind === "improve" && (
         <div className="shrink-0 border-t border-border bg-panel px-3 py-2">
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-2 gap-1">
             {AGENT_RUN_MODES.map((mode) => {
               const active = agentMode === mode;
               return (
@@ -809,8 +825,24 @@ export function ClaudeThread({
               );
             })}
           </div>
+          <button
+            type="button"
+            onClick={() => setSandboxPreview((v) => !v)}
+            disabled={pending || creating}
+            className={`mt-1.5 flex w-full items-center justify-between rounded-md border px-2 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+              sandboxPreview
+                ? "border-running bg-running/10 text-fg"
+                : "border-border bg-subtle text-muted hover:bg-border hover:text-fg"
+            }`}
+          >
+            <span>Sandbox preview</span>
+            <span className="font-mono text-[10px]">{sandboxPreview ? "on" : "off"}</span>
+          </button>
           <p className="mt-1.5 text-[11px] leading-snug text-muted">
-            {AGENT_RUN_MODE_HELP[agentMode]}
+            {AGENT_RUN_MODE_HELP[agentMode]}{" "}
+            {sandboxPreview
+              ? "Implementation requests use a preview worktree before production."
+              : "Implementation requests target production directly."}
           </p>
         </div>
       )}

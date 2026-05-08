@@ -1,7 +1,6 @@
 export const AGENT_RUN_MODES = [
   "clarify",
   "direct_apply",
-  "sandbox_preview",
 ] as const;
 
 export type AgentRunMode = (typeof AGENT_RUN_MODES)[number];
@@ -23,13 +22,11 @@ export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number];
 export const AGENT_RUN_MODE_LABEL: Record<AgentRunMode, string> = {
   clarify: "Clarify",
   direct_apply: "Direct apply",
-  sandbox_preview: "Sandbox preview",
 };
 
 export const AGENT_RUN_MODE_HELP: Record<AgentRunMode, string> = {
   clarify: "Inspect and ask targeted questions before changing files.",
   direct_apply: "Edit the main checkout, verify, commit, push, and deploy Vercel.",
-  sandbox_preview: "Work in a VM worktree and show production beside preview before promotion.",
 };
 
 export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {

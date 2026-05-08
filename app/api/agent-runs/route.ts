@@ -20,6 +20,7 @@ async function requireUser() {
 
 const CreateBody = z.object({
   mode: z.enum(AGENT_RUN_MODES),
+  sandboxPreview: z.boolean().optional(),
   request: z.string().trim().min(1).max(12000),
   chatSessionId: z.string().uuid().optional().nullable(),
   productionUrl: z.string().url().optional().nullable(),
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
     .insert(agentRuns)
     .values({
       mode: body.mode,
+      sandboxPreview: body.sandboxPreview ?? false,
       status: "running",
       request: body.request,
       chatSessionId: body.chatSessionId ?? null,
@@ -95,6 +97,7 @@ export async function POST(req: NextRequest) {
     body: `Started ${body.mode} agent run.`,
     metadataJson: {
       mode: body.mode,
+      sandboxPreview: body.sandboxPreview ?? false,
       chatSessionId: body.chatSessionId ?? null,
     },
   });

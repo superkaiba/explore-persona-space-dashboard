@@ -332,6 +332,7 @@ export const agentRuns = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     mode: agentRunModeEnum("mode").notNull(),
+    sandboxPreview: boolean("sandbox_preview").notNull().default(false),
     status: agentRunStatusEnum("status").notNull().default("queued"),
     request: text("request").notNull(),
     summary: text("summary"),
