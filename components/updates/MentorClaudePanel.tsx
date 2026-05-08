@@ -110,7 +110,6 @@ type NormalizedPayload = Required<
   };
 
 const ASK_EVENT = "eps:mentor-claude:ask";
-const HOVER_EVENT = "eps:mentor-claude:hover";
 const MAX_STORED_WINDOWS = 10;
 const MAX_STORED_TABS = 8;
 const MAX_STORED_MESSAGES = 40;
@@ -144,31 +143,8 @@ function setHoveredAnchor(element: HTMLElement) {
   anchorElement(element).dataset.claudeHovered = "true";
 }
 
-function findVisibleAnchor(scopeId: string) {
-  for (const anchor of document.querySelectorAll<HTMLElement>("[data-claude-anchor]")) {
-    if (anchor.dataset.claudeScopeId !== scopeId) continue;
-    const rect = anchor.getBoundingClientRect();
-    if (
-      rect.width > 0 &&
-      rect.height > 0 &&
-      rect.bottom >= 0 &&
-      rect.top <= window.innerHeight &&
-      rect.right >= 0 &&
-      rect.left <= window.innerWidth
-    ) {
-      return anchor;
-    }
-  }
-  return null;
-}
-
-export function dispatchClaudeHover(payload: ClaudeAskPayload, element: HTMLElement) {
+export function dispatchClaudeHover(_payload: ClaudeAskPayload, element: HTMLElement) {
   setHoveredAnchor(element);
-  window.dispatchEvent(
-    new CustomEvent<ClaudeAskPayload>(HOVER_EVENT, {
-      detail: { ...payload, anchorRect: anchorForElement(element) },
-    }),
-  );
 }
 
 export function clearClaudeHover(element: HTMLElement) {
@@ -313,52 +289,6 @@ export function MentorClaudePanel({
     }, 250);
     return () => window.clearTimeout(id);
   }, [mounted, storageKey, windows]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    document
-      .querySelectorAll<HTMLElement>("[data-claude-anchor][data-claude-connected='true']")
-      .forEach((anchor) => {
-        delete anchor.dataset.claudeConnected;
-      });
-
-    for (const win of windows) {
-      if (!win.open || win.scopeKind !== "result") continue;
-      for (const anchor of document.querySelectorAll<HTMLElement>("[data-claude-anchor]")) {
-        if (anchor.dataset.claudeScopeId === win.scopeId) {
-          anchor.dataset.claudeConnected = "true";
-        }
-      }
-    }
-  }, [mounted, windows]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    let raf = 0;
-    const refreshAnchors = () => {
-      if (raf) return;
-      raf = window.requestAnimationFrame(() => {
-        raf = 0;
-        setWindows((current) =>
-          current.map((win) => {
-            if (!win.open || win.scopeKind !== "result") return win;
-            const anchor = findVisibleAnchor(win.scopeId);
-            if (!anchor) return win;
-            return { ...win, anchorRect: rectPayload(anchor.getBoundingClientRect()) };
-          }),
-        );
-      });
-    };
-
-    window.addEventListener("scroll", refreshAnchors, true);
-    window.addEventListener("resize", refreshAnchors);
-    refreshAnchors();
-    return () => {
-      if (raf) window.cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", refreshAnchors, true);
-      window.removeEventListener("resize", refreshAnchors);
-    };
-  }, [mounted]);
 
   useEffect(() => {
     setWindows((current) =>
@@ -727,24 +657,11 @@ export function MentorClaudePanel({
       if (detail.autoSubmit) void sendText(payload.key, tabId, text, payload);
     }
 
-    function onHover(event: Event) {
-      const payload = normalizePayload((event as CustomEvent<ClaudeAskPayload>).detail);
-      setWindows((current) =>
-        current.map((win) =>
-          win.key === payload.key
-            ? { ...win, anchorRect: payload.anchorRect ?? win.anchorRect, updatedAt: Date.now() }
-            : win,
-        ),
-      );
-    }
-
     window.addEventListener(ASK_EVENT, onAsk);
-    window.addEventListener(HOVER_EVENT, onHover);
     return () => {
       window.removeEventListener(ASK_EVENT, onAsk);
-      window.removeEventListener(HOVER_EVENT, onHover);
     };
-  }, [ensureWindow, normalizePayload, sendText]);
+  }, [ensureWindow, sendText]);
 
   function closeAllWindows() {
     setWindows((current) =>
@@ -818,7 +735,7 @@ export function MentorClaudePanel({
         windows={openWindows}
         activeWindow={activeWindow}
         activeTab={activeTab}
-        style={unifiedChatBoxStyle(activeWindow, viewport)}
+        style={unifiedChatBoxStyle(viewport)}
         onClose={closeAllWindows}
         onNewTab={() => newTab(activeWindow.key)}
         onCloseTab={(windowKey, tabId) => closeTab(windowKey, tabId)}
@@ -863,8 +780,6 @@ function ClaudeChatWindow({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [activeTab?.id, activeTab?.messages]);
 
-  const connector = connectorGeometry(activeWindow, style);
-
   function send(e?: React.FormEvent) {
     e?.preventDefault();
     onSend(activeWindow.key, activeTab.id, activeTab.draft);
@@ -872,51 +787,10 @@ function ClaudeChatWindow({
 
   return (
     <>
-      {connector && (
-        <svg
-          aria-hidden="true"
-          className="pointer-events-none fixed inset-0 h-screen w-screen"
-        >
-          <path
-            d={connector.path}
-            fill="none"
-            stroke="rgb(var(--accent) / 0.72)"
-            strokeLinecap="round"
-            strokeWidth="1.5"
-            vectorEffect="non-scaling-stroke"
-          />
-          <circle
-            cx={connector.anchorDot.x}
-            cy={connector.anchorDot.y}
-            r="3"
-            fill="rgb(var(--accent))"
-          />
-          <circle
-            cx={connector.windowDot.x}
-            cy={connector.windowDot.y}
-            r="2.5"
-            fill="rgb(var(--panel))"
-            stroke="rgb(var(--accent))"
-            strokeWidth="1.5"
-          />
-        </svg>
-      )}
       <aside
-        className={cn(
-          "pointer-events-auto fixed z-10 flex flex-col overflow-hidden rounded-lg border bg-panel shadow-rail",
-          connector ? "border-accent/65" : "border-border",
-        )}
+        className="pointer-events-auto fixed z-10 flex flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-rail"
         style={style}
       >
-        {connector && (
-          <div
-            aria-hidden="true"
-            className={cn(
-              "absolute top-0 z-20 h-full w-[2px] bg-accent/70",
-              connector.side === "left" ? "left-0" : "right-0",
-            )}
-          />
-        )}
         <header className="flex items-start gap-3 border-b border-border bg-panel px-4 py-3">
           <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
           <div className="min-w-0 flex-1">
@@ -1184,10 +1058,7 @@ function makeTab(index: number, draft: string): ChatTab {
   };
 }
 
-function unifiedChatBoxStyle(
-  win: ChatWindow,
-  viewport: { width: number; height: number },
-): CSSProperties {
+function unifiedChatBoxStyle(viewport: { width: number; height: number }): CSSProperties {
   if (viewport.width < 768) {
     return {
       left: 12,
@@ -1199,20 +1070,8 @@ function unifiedChatBoxStyle(
 
   const width = 580;
   const height = Math.min(680, viewport.height - 32);
-  let left: number;
-  let top: number;
-
-  if (win.scopeKind === "result" && win.anchorRect) {
-    left = win.anchorRect.right + 12;
-    if (left + width > viewport.width - 12) left = win.anchorRect.left - width - 12;
-    if (left < 12) left = Math.max(12, viewport.width - width - 12);
-    top = clamp(win.anchorRect.top - 10, 12, viewport.height - height - 12);
-  } else {
-    left = viewport.width - width - 16;
-    top = viewport.height - height - 16;
-    left = clamp(left, 12, viewport.width - width - 12);
-    top = clamp(top, 12, viewport.height - height - 12);
-  }
+  const left = clamp(viewport.width - width - 16, 12, viewport.width - width - 12);
+  const top = clamp(viewport.height - height - 16, 12, viewport.height - height - 12);
 
   return { left, top, width, height };
 }
@@ -1228,39 +1087,6 @@ function flattenChatTabs(windows: ChatWindow[]) {
       tab,
     })),
   );
-}
-
-function connectorGeometry(win: ChatWindow, style: CSSProperties) {
-  if (win.scopeKind !== "result" || !win.anchorRect) return null;
-  const left = numericStyle(style.left);
-  const top = numericStyle(style.top);
-  const width = numericStyle(style.width);
-  const height = numericStyle(style.height);
-  if (left == null || top == null || width == null || height == null) return null;
-
-  const anchor = win.anchorRect;
-  const windowIsRightOfAnchor = left >= anchor.right;
-  const startX = windowIsRightOfAnchor ? anchor.right : anchor.left;
-  const rawEndX = windowIsRightOfAnchor ? left : left + width;
-  const anchorY = clamp(anchor.top + anchor.height / 2, 8, window.innerHeight - 8);
-  const endY = clamp(anchorY, top + 52, top + height - 64);
-  const midX = startX + (rawEndX - startX) * 0.52;
-
-  return {
-    path: `M ${startX} ${anchorY} L ${midX} ${anchorY} L ${midX} ${endY} L ${rawEndX} ${endY}`,
-    side: windowIsRightOfAnchor ? ("left" as const) : ("right" as const),
-    anchorDot: { x: startX, y: anchorY },
-    windowDot: { x: rawEndX, y: endY },
-  };
-}
-
-function numericStyle(value: CSSProperties[keyof CSSProperties]) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.endsWith("px")) {
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
 }
 
 function clamp(value: number, min: number, max: number) {

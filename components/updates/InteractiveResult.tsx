@@ -45,7 +45,7 @@ export function InteractiveResultCard({
         onMouseLeave={(event) => clearClaudeHover(event.currentTarget)}
         onFocus={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
         onBlur={(event) => clearClaudeHover(event.currentTarget)}
-        className="rounded-lg border border-border bg-panel p-4 transition-colors hover:bg-subtle/35 data-[claude-connected=true]:border-accent/60 data-[claude-connected=true]:bg-accent/5 data-[claude-hovered=true]:border-accent data-[claude-hovered=true]:bg-accent/10"
+        className="rounded-lg border border-border bg-panel p-4 transition-colors hover:bg-subtle/35 data-[claude-hovered=true]:border-accent data-[claude-hovered=true]:bg-accent/10"
       >
         <div className="flex items-start gap-3">
           <button
@@ -111,7 +111,7 @@ export function InteractiveResultRow({
         onMouseLeave={(event) => clearClaudeHover(event.currentTarget)}
         onFocus={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
         onBlur={(event) => clearClaudeHover(event.currentTarget)}
-        className="rounded-md border border-border bg-panel px-3 py-2 transition-colors hover:bg-subtle/35 data-[claude-connected=true]:border-accent/60 data-[claude-connected=true]:bg-accent/5 data-[claude-hovered=true]:border-accent data-[claude-hovered=true]:bg-accent/10"
+        className="rounded-md border border-border bg-panel px-3 py-2 transition-colors hover:bg-subtle/35 data-[claude-hovered=true]:border-accent data-[claude-hovered=true]:bg-accent/10"
       >
         <div className="flex min-w-0 items-start gap-3">
           <ResultBadge result={result} compact />
