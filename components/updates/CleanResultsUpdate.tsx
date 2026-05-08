@@ -132,6 +132,114 @@ export function DailyCleanResultsUpdate({
   );
 }
 
+export function CleanResultsLogUpdate({
+  results,
+  generatedAt,
+  internal = false,
+  weekPath = "/timeline/week",
+  showWeeklyLink = true,
+  showInternalLink = true,
+}: {
+  results: CleanResult[];
+  generatedAt: Date;
+  internal?: boolean;
+  weekPath?: string;
+  showWeeklyLink?: boolean;
+  showInternalLink?: boolean;
+}) {
+  const sortedResults = results
+    .slice()
+    .sort((a, b) => asDate(b.updatedAt).getTime() - asDate(a.updatedAt).getTime());
+  const groups = groupResultsByDay(sortedResults);
+  const context = logContext(sortedResults);
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-5xl px-5 py-6 md:px-8">
+        <header className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
+          <div>
+            <h1 className="text-[22px] font-semibold tracking-tight text-fg">
+              Results log
+            </h1>
+            <p className="mt-1 text-[12px] text-muted">
+              Clean results, most recent first.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {showWeeklyLink && (
+              <Link
+                href={internal ? `${weekPath}?internal=1` : weekPath}
+                className="rounded-md border border-border bg-panel px-3 py-1.5 text-[12px] text-muted hover:bg-subtle hover:text-fg"
+              >
+                Weekly
+              </Link>
+            )}
+            {showInternalLink && !internal && (
+              <Link
+                href="/timeline/today?internal=1"
+                className="rounded-md border border-border bg-panel px-3 py-1.5 text-[12px] text-muted hover:bg-subtle hover:text-fg"
+              >
+                Internal
+              </Link>
+            )}
+          </div>
+        </header>
+
+        <ClaudeAskComposer
+          payload={{
+            scopeTitle: "Results log",
+            contextMd: context,
+            suggestedQuestion: "What should I take away from the recent clean results?",
+          }}
+          placeholder="Ask Claude Code to inspect these results..."
+          className="mb-5"
+        />
+
+        {groups.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border bg-panel p-4 text-[13px] text-muted">
+            No clean results in this window.
+          </p>
+        ) : (
+          <main className="flex flex-col gap-7">
+            {groups.map((group) => {
+              const counts = resultCounts(group.results);
+              return (
+                <section key={group.key} className="min-w-0">
+                  <div className="sticky top-0 z-20 -mx-5 flex items-center justify-between gap-3 border-y border-border bg-canvas/95 px-5 py-2 backdrop-blur md:-mx-8 md:px-8">
+                    <div>
+                      <h2 className="text-[13px] font-semibold text-fg">{group.label}</h2>
+                      <div className="font-mono text-[10px] text-muted">{group.key}</div>
+                    </div>
+                    <div className="text-right text-[11px] text-muted">
+                      <div>
+                        {counts.total} {counts.total === 1 ? "result" : "results"}
+                      </div>
+                      <div>
+                        {counts.useful} useful, {counts.notUseful} not useful
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-col gap-3">
+                    {group.results.map((result) => (
+                      <InteractiveResultCard
+                        key={result.id}
+                        result={clientResult(result)}
+                        internal={internal}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </main>
+        )}
+
+        <MentorClaudePanel sessionId={`log-${dayKey(generatedAt)}`} baseContextMd={context} />
+      </div>
+    </div>
+  );
+}
+
 export function WeeklyCleanResultsUpdate({
   week,
   recent,
@@ -514,6 +622,27 @@ function weeklyContext(start: Date, end: Date, results: CleanResult[]) {
         result.githubIssueNumber == null
           ? null
           : `   GitHub issue: https://github.com/superkaiba/explore-persona-space/issues/${result.githubIssueNumber}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    ),
+  ].join("\n");
+}
+
+function logContext(results: CleanResult[]) {
+  return [
+    "Recent clean results log, most recent first.",
+    "",
+    ...results.map((result, index) =>
+      [
+        `${index + 1}. ${result.title} (${dayKey(result.updatedAt)})`,
+        `   Claim ID: ${result.id}`,
+        result.githubIssueNumber == null
+          ? null
+          : `   GitHub issue: https://github.com/superkaiba/explore-persona-space/issues/${result.githubIssueNumber}`,
+        `   Classification: ${result.useful ? "useful" : "not useful"}`,
+        `   Confidence: ${result.confidence ?? "not set"}`,
+        result.excerpt ? `   Excerpt: ${result.excerpt}` : null,
       ]
         .filter(Boolean)
         .join("\n"),

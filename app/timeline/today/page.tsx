@@ -1,12 +1,10 @@
 import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { claims } from "@/db/schema";
-import { DailyCleanResultsUpdate } from "@/components/updates/CleanResultsUpdate";
+import { CleanResultsLogUpdate } from "@/components/updates/CleanResultsUpdate";
 import {
   addDays,
   cleanResultFromClaim,
-  dayKey,
-  parseDayKey,
   startOfLocalDay,
 } from "@/lib/update-results";
 
@@ -22,7 +20,6 @@ export default async function TodayPage({
   const params = await searchParams;
   const db = getDb();
   const now = new Date();
-  const selectedDate = parseDayKey(params.date) ?? startOfLocalDay(now);
   const archiveStart = addDays(startOfLocalDay(now), -ARCHIVE_DAYS);
 
   const claimRows = await db
@@ -40,14 +37,10 @@ export default async function TodayPage({
     .orderBy(desc(claims.updatedAt));
 
   const allResults = claimRows.map(cleanResultFromClaim);
-  const selectedKey = dayKey(selectedDate);
-  const results = allResults.filter((result) => dayKey(result.updatedAt) === selectedKey);
 
   return (
-    <DailyCleanResultsUpdate
-      results={results}
-      archive={allResults}
-      selectedDate={selectedDate}
+    <CleanResultsLogUpdate
+      results={allResults}
       generatedAt={now}
       internal={params.internal === "1"}
     />
