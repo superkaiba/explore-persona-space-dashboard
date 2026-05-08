@@ -1,15 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/nav/Sidebar";
-import { MobileNav } from "@/components/nav/MobileNav";
-import { ChatRail } from "@/components/chat/ChatRail";
-import { MobileChatDrawer } from "@/components/chat/MobileChatDrawer";
-import { ImproveChatWindow } from "@/components/chat/ImproveChatWindow";
-import { WindowProvider } from "@/components/windows/WindowProvider";
-import { WindowsLayer } from "@/components/windows/WindowsLayer";
 import { ThemeProvider, themeBootstrapScript } from "@/components/theme/ThemeProvider";
-import { StatusBar } from "@/components/preset/StatusBar";
+import { AppShell } from "@/components/nav/AppShell";
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -52,22 +45,7 @@ export default function RootLayout({
       </head>
       <body className="relative min-h-screen overflow-hidden bg-canvas font-sans text-fg antialiased">
         <ThemeProvider>
-          <WindowProvider>
-            <div className="relative z-10 flex h-dvh min-h-0 flex-col md:grid md:grid-cols-[240px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)_460px]">
-              <div className="hidden min-h-0 md:block">
-                <Sidebar />
-              </div>
-              <main className="min-h-0 overflow-hidden pb-14 md:pb-7">{children}</main>
-              <div className="hidden min-h-0 lg:block">
-                <ChatRail />
-              </div>
-            </div>
-            <StatusBar />
-            <MobileNav />
-            <MobileChatDrawer />
-            <WindowsLayer />
-            <ImproveChatWindow />
-          </WindowProvider>
+          <AppShell>{children}</AppShell>
         </ThemeProvider>
       </body>
     </html>

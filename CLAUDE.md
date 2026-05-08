@@ -8,6 +8,9 @@ deployment target.
 
 - Treat `https://dashboard.superkaiba.com` or `NEXT_PUBLIC_SITE_URL` as live.
 - Use the VM checkout to inspect, edit, test, commit, and push changes.
+- When showing a dev or preview server to the user from this VM, bind it to
+  `0.0.0.0` and report the external VM URL
+  `http://35.226.138.62:<port>/...`. Do not give `localhost` URLs to the user.
 - For production changes, run checks, commit, push the Vercel-connected branch,
   and report the Vercel deployment URL/status when available.
 - Do not use destructive git commands such as `git reset --hard` or

@@ -14,10 +14,10 @@ export const dynamic = "force-dynamic";
 
 const ARCHIVE_DAYS = 60;
 
-export default async function TodayPage({
+export default async function MentorDailyUpdatePage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; internal?: string }>;
+  searchParams: Promise<{ date?: string }>;
 }) {
   const params = await searchParams;
   const db = getDb();
@@ -41,15 +41,16 @@ export default async function TodayPage({
 
   const allResults = claimRows.map(cleanResultFromClaim);
   const selectedKey = dayKey(selectedDate);
-  const results = allResults.filter((result) => dayKey(result.updatedAt) === selectedKey);
 
   return (
     <DailyCleanResultsUpdate
-      results={results}
+      results={allResults.filter((result) => dayKey(result.updatedAt) === selectedKey)}
       archive={allResults}
       selectedDate={selectedDate}
       generatedAt={now}
-      internal={params.internal === "1"}
+      dayPath="/mentor/updates"
+      weekPath="/mentor/updates/week"
+      showInternalLink={false}
     />
   );
 }

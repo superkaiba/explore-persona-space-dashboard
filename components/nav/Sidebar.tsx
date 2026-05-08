@@ -38,10 +38,10 @@ const groups: {
     ],
   },
   {
-    label: "Timeline",
+    label: "Updates",
     items: [
-      { href: "/timeline/today", label: "Today", icon: CalendarDays },
-      { href: "/timeline/week", label: "Week", icon: CalendarDays },
+      { href: "/timeline/today", label: "Daily", icon: CalendarDays },
+      { href: "/timeline/week", label: "Weekly", icon: CalendarDays },
     ],
   },
 ];

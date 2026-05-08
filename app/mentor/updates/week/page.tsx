@@ -12,12 +12,7 @@ export const dynamic = "force-dynamic";
 
 const RECENT_WEEKS = 8;
 
-export default async function WeekPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ internal?: string }>;
-}) {
-  const params = await searchParams;
+export default async function MentorWeeklyUpdatePage() {
   const db = getDb();
   const now = new Date();
   const weekStart = startOfLocalWeek(now);
@@ -38,16 +33,14 @@ export default async function WeekPage({
     .orderBy(desc(claims.updatedAt));
 
   const results = claimRows.map(cleanResultFromClaim);
-  const week = results.filter((result) => new Date(result.updatedAt).getTime() >= weekStart.getTime());
-  const recent = results.filter((result) => new Date(result.updatedAt).getTime() < weekStart.getTime());
 
   return (
     <WeeklyCleanResultsUpdate
-      week={week}
-      recent={recent}
+      week={results.filter((result) => new Date(result.updatedAt).getTime() >= weekStart.getTime())}
+      recent={results.filter((result) => new Date(result.updatedAt).getTime() < weekStart.getTime())}
       generatedAt={now}
       weekStart={weekStart}
-      internal={params.internal === "1"}
+      dayPath="/mentor/updates"
     />
   );
 }

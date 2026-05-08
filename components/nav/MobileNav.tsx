@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BookOpen,
-  FolderKanban,
+  CalendarDays,
   Inbox,
   ListTodo,
   Network,
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
-  { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/timeline/today", label: "Updates", icon: CalendarDays },
   { href: "/todos", label: "Tasks", icon: ListTodo },
   { href: "/lit", label: "Lit", icon: BookOpen },
   { href: "/graph", label: "Graph", icon: Network },
