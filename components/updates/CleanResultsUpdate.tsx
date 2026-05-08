@@ -3,6 +3,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, MessageCircle } from "lucide-r
 import {
   asDate,
   type CleanResult,
+  type CleanResultDateField,
   dayKey,
   formatDay,
   formatShortDate,
@@ -142,6 +143,7 @@ export function CleanResultsLogUpdate({
   weekPath = "/timeline/week",
   showWeeklyLink = true,
   showInternalLink = true,
+  dateField = "updatedAt",
 }: {
   results: CleanResult[];
   generatedAt: Date;
@@ -149,12 +151,13 @@ export function CleanResultsLogUpdate({
   weekPath?: string;
   showWeeklyLink?: boolean;
   showInternalLink?: boolean;
+  dateField?: CleanResultDateField;
 }) {
   const sortedResults = results
     .slice()
-    .sort((a, b) => asDate(b.updatedAt).getTime() - asDate(a.updatedAt).getTime());
-  const groups = groupResultsByDay(sortedResults);
-  const context = logContext(sortedResults);
+    .sort((a, b) => asDate(b[dateField]).getTime() - asDate(a[dateField]).getTime());
+  const groups = groupResultsByDay(sortedResults, dateField);
+  const context = logContext(sortedResults, dateField);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -165,7 +168,9 @@ export function CleanResultsLogUpdate({
               Results log
             </h1>
             <p className="mt-1 text-[12px] text-muted">
-              Clean results, most recent first.
+              {dateField === "createdAt"
+                ? "GitHub Useful and Not useful columns, newest issue creation first."
+                : "Clean results, most recent first."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -233,6 +238,7 @@ export function CleanResultsLogUpdate({
                         key={result.id}
                         result={clientResult(result)}
                         internal={internal}
+                        dateField={dateField}
                       />
                     ))}
                   </div>
@@ -255,6 +261,7 @@ export function WeeklyCleanResultsUpdate({
   weekStart,
   internal = false,
   dayPath = "/timeline/today",
+  dateField = "updatedAt",
 }: {
   week: CleanResult[];
   recent: CleanResult[];
@@ -262,11 +269,18 @@ export function WeeklyCleanResultsUpdate({
   weekStart: Date;
   internal?: boolean;
   dayPath?: string;
+  dateField?: CleanResultDateField;
 }) {
   const counts = resultCounts(week);
-  const groups = groupResultsByDay(week);
-  const archiveGroups = groupResultsByDay(recent);
-  const context = weeklyContext(weekStart, generatedAt, week);
+  const sortedWeek = week
+    .slice()
+    .sort((a, b) => asDate(b[dateField]).getTime() - asDate(a[dateField]).getTime());
+  const sortedRecent = recent
+    .slice()
+    .sort((a, b) => asDate(b[dateField]).getTime() - asDate(a[dateField]).getTime());
+  const groups = groupResultsByDay(sortedWeek, dateField);
+  const archiveGroups = groupResultsByDay(sortedRecent, dateField);
+  const context = weeklyContext(weekStart, generatedAt, sortedWeek, dateField);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -334,6 +348,7 @@ export function WeeklyCleanResultsUpdate({
                           key={result.id}
                           result={clientResult(result)}
                           internal={internal}
+                          dateField={dateField}
                         />
                       ))}
                     </div>
@@ -605,8 +620,9 @@ function ClaudeChatExplainer() {
           <p className="mt-1 max-w-3xl">
             Use the top box for the whole log, or a result&apos;s chat button for that
             result. Each chat starts a Claude Code sidecar that can inspect the VM,
-            database, GitHub issue, and linked artifacts. Result chats open beside the
-            result; closed chats keep their tabs and messages when reopened.
+            database, GitHub issue, and linked artifacts. Result and global chats stay
+            in one tabbed chat box; closed chats keep their tabs and messages when
+            reopened.
           </p>
         </div>
       </div>
@@ -641,13 +657,18 @@ function dailyContext(date: Date, results: CleanResult[]) {
   return [`Daily update for ${formatDay(date)}.`, "", ...lines].join("\n");
 }
 
-function weeklyContext(start: Date, end: Date, results: CleanResult[]) {
+function weeklyContext(
+  start: Date,
+  end: Date,
+  results: CleanResult[],
+  dateField: CleanResultDateField = "updatedAt",
+) {
   return [
     `Weekly update from ${formatShortDate(start)} to ${formatShortDate(end)}.`,
     "",
     ...results.map((result, index) =>
       [
-        `${index + 1}. ${result.title} (${dayKey(result.updatedAt)})`,
+        `${index + 1}. ${result.title} (${dayKey(result[dateField])})`,
         `   Claim ID: ${result.id}`,
         result.githubIssueNumber == null
           ? null
@@ -659,13 +680,18 @@ function weeklyContext(start: Date, end: Date, results: CleanResult[]) {
   ].join("\n");
 }
 
-function logContext(results: CleanResult[]) {
+function logContext(
+  results: CleanResult[],
+  dateField: CleanResultDateField = "updatedAt",
+) {
   return [
-    "Recent clean results log, most recent first.",
+    dateField === "createdAt"
+      ? "Recent clean results log from GitHub Useful and Not useful columns, newest issue creation first."
+      : "Recent clean results log, most recent first.",
     "",
     ...results.map((result, index) =>
       [
-        `${index + 1}. ${result.title} (${dayKey(result.updatedAt)})`,
+        `${index + 1}. ${result.title} (${dayKey(result[dateField])})`,
         `   Claim ID: ${result.id}`,
         result.githubIssueNumber == null
           ? null

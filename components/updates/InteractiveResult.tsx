@@ -15,8 +15,12 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { CleanResult } from "@/lib/update-results";
-import { dayKey, formatTime } from "@/lib/update-results";
+import {
+  dayKey,
+  formatTime,
+  type CleanResult,
+  type CleanResultDateField,
+} from "@/lib/update-results";
 import {
   ClaudeAskButton,
   ClaudeAskComposer,
@@ -29,9 +33,11 @@ import { cn } from "@/lib/utils";
 export function InteractiveResultCard({
   result,
   internal,
+  dateField = "updatedAt",
 }: {
   result: CleanResult;
   internal: boolean;
+  dateField?: CleanResultDateField;
 }) {
   const [open, setOpen] = useState(false);
   const askPayload = useMemo(() => resultAskPayload(result), [result]);
@@ -56,7 +62,7 @@ export function InteractiveResultCard({
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
               <ResultBadge result={result} />
               {result.confidence && <span className="font-mono">{result.confidence}</span>}
-              <span className="font-mono">{formatTime(result.updatedAt)}</span>
+              <span className="font-mono">{formatTime(result[dateField])}</span>
             </div>
             <h2 className="mt-2 text-[15px] font-semibold leading-snug text-fg">
               {result.title}
@@ -85,6 +91,7 @@ export function InteractiveResultCard({
         <ResultDetailOverlay
           result={result}
           internal={internal}
+          dateField={dateField}
           onClose={() => setOpen(false)}
         />
       )}
@@ -95,9 +102,11 @@ export function InteractiveResultCard({
 export function InteractiveResultRow({
   result,
   internal,
+  dateField = "updatedAt",
 }: {
   result: CleanResult;
   internal: boolean;
+  dateField?: CleanResultDateField;
 }) {
   const [open, setOpen] = useState(false);
   const askPayload = useMemo(() => resultAskPayload(result), [result]);
@@ -125,7 +134,7 @@ export function InteractiveResultRow({
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted">
               {result.confidence && <span className="font-mono">{result.confidence}</span>}
-              <span className="font-mono">{formatTime(result.updatedAt)}</span>
+              <span className="font-mono">{formatTime(result[dateField])}</span>
               <span className="inline-flex items-center gap-1">
                 <Maximize2 className="h-3 w-3" />
                 Open
@@ -145,6 +154,7 @@ export function InteractiveResultRow({
         <ResultDetailOverlay
           result={result}
           internal={internal}
+          dateField={dateField}
           onClose={() => setOpen(false)}
         />
       )}
@@ -155,10 +165,12 @@ export function InteractiveResultRow({
 function ResultDetailOverlay({
   result,
   internal,
+  dateField,
   onClose,
 }: {
   result: CleanResult;
   internal: boolean;
+  dateField: CleanResultDateField;
   onClose: () => void;
 }) {
   const markdown = result.body || result.excerpt || "No result body is available.";
@@ -190,7 +202,7 @@ function ResultDetailOverlay({
               <ResultBadge result={result} />
               {result.confidence && <span className="font-mono">{result.confidence}</span>}
               <span className="font-mono">
-                {dayKey(result.updatedAt)} {formatTime(result.updatedAt)}
+                {dayKey(result[dateField])} {formatTime(result[dateField])}
               </span>
             </div>
             <h2
@@ -329,14 +341,18 @@ function resultAskPayload(result: CleanResult): ClaudeAskPayload {
 }
 
 function resultContext(result: CleanResult) {
+  const resultUrl = result.href.startsWith("http")
+    ? result.href
+    : `https://dashboard.superkaiba.com${result.href}`;
   return [
     "Claude Code inspection target:",
     `Title: ${result.title}`,
     `Claim ID: ${result.id}`,
     `Classification: ${result.useful ? "useful" : "not useful"}`,
     `Confidence: ${result.confidence ?? "not set"}`,
-    `Updated: ${dayKey(result.updatedAt)} ${formatTime(result.updatedAt)}`,
-    `Dashboard URL: https://dashboard.superkaiba.com${result.href}`,
+    `GitHub issue created: ${dayKey(result.createdAt)} ${formatTime(result.createdAt)}`,
+    `Dashboard updated: ${dayKey(result.updatedAt)} ${formatTime(result.updatedAt)}`,
+    `Result URL: ${resultUrl}`,
     result.githubIssueNumber == null
       ? null
       : `GitHub issue: https://github.com/superkaiba/explore-persona-space/issues/${result.githubIssueNumber}`,

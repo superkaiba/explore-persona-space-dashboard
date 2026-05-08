@@ -13,6 +13,8 @@ export type CleanResult = {
   href: string;
 };
 
+export type CleanResultDateField = "createdAt" | "updatedAt";
+
 type BodyJson = { kind?: string; text?: unknown } | null;
 
 export function startOfLocalDay(input = new Date()) {
@@ -146,7 +148,10 @@ export function cleanResultFromClaim(row: {
   };
 }
 
-export function groupResultsByDay(results: CleanResult[]) {
+export function groupResultsByDay(
+  results: CleanResult[],
+  dateField: CleanResultDateField = "updatedAt",
+) {
   const groups: Array<{
     key: string;
     label: string;
@@ -155,7 +160,8 @@ export function groupResultsByDay(results: CleanResult[]) {
   }> = [];
 
   for (const result of results) {
-    const key = dayKey(result.updatedAt);
+    const dateValue = result[dateField];
+    const key = dayKey(dateValue);
     const last = groups[groups.length - 1];
     if (last?.key === key) {
       last.results.push(result);
@@ -163,8 +169,8 @@ export function groupResultsByDay(results: CleanResult[]) {
     }
     groups.push({
       key,
-      label: formatDay(result.updatedAt),
-      date: startOfLocalDay(asDate(result.updatedAt)),
+      label: formatDay(dateValue),
+      date: startOfLocalDay(asDate(dateValue)),
       results: [result],
     });
   }
