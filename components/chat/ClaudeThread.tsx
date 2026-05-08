@@ -24,6 +24,7 @@ import {
   type AgentRunProvider,
   type AgentRunStatus,
 } from "@/lib/agent-runs";
+import { postSidecarChat } from "@/lib/sidecar-client";
 
 type DbMessage = {
   id: string;
@@ -96,7 +97,7 @@ function sqlLiteral(value: string) {
 }
 
 function runUpdateSql(runId: string, status: AgentRunStatus, eventType: string, body: string) {
-  return `psql "$DASHBOARD_DATABASE_URL" -c "UPDATE agent_run SET status='${status}', updated_at=now() WHERE id='${runId}'; INSERT INTO agent_run_event (run_id, event_type, body) VALUES ('${runId}', '${eventType}', '${sqlLiteral(body)}');"`;
+  return `psql "\${DASHBOARD_DATABASE_URL%%\\?*}" -c "UPDATE agent_run SET status='${status}', updated_at=now() WHERE id='${runId}'; INSERT INTO agent_run_event (run_id, event_type, body) VALUES ('${runId}', '${eventType}', '${sqlLiteral(body)}');"`;
 }
 
 function improvementDispatchPrompt(
@@ -509,17 +510,10 @@ export function ClaudeThread({
               runForRequest,
             )
           : text;
-      const res = await fetch(`${sidecarUrl}/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          session_id: sidecarSessionId,
-          provider: agentProviderForRequest,
-          messages: sidecarMessages(history, agentText),
-        }),
+      const res = await postSidecarChat(sidecarUrl, token, {
+        session_id: sidecarSessionId,
+        provider: agentProviderForRequest,
+        messages: sidecarMessages(history, agentText),
       });
       if (!res.ok || !res.body) {
         const errTxt = await res.text().catch(() => res.statusText);

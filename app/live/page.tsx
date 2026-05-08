@@ -207,6 +207,7 @@ export default async function LivePage() {
     parent: r.claimId ? parentById.get(r.claimId) ?? null : null,
     podName: r.podName,
     body: bodyText(r.planJson),
+    href: `/experiment/${r.id}`,
   }));
 
   const followupItems = experimentItems.filter(isFollowupsRunning);

@@ -5,17 +5,28 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_SIDECAR_INTERNAL_URL = "http://127.0.0.1:7654";
+const DEFAULT_PRODUCTION_SIDECAR_URL = "https://chat.superkaiba.com";
+
+function absoluteUrl(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed?.startsWith("http://") || trimmed?.startsWith("https://")
+    ? trimmed.replace(/\/+$/, "")
+    : null;
+}
 
 function sidecarBaseUrl() {
-  const internalUrl = process.env.SIDECAR_INTERNAL_URL?.trim();
-  if (internalUrl) return internalUrl.replace(/\/+$/, "");
+  const internalUrl = absoluteUrl(process.env.SIDECAR_INTERNAL_URL);
+  if (internalUrl) return internalUrl;
 
-  const publicUrl = process.env.NEXT_PUBLIC_SIDECAR_URL?.trim();
-  if (publicUrl?.startsWith("http://") || publicUrl?.startsWith("https://")) {
-    return publicUrl.replace(/\/+$/, "");
-  }
+  const sidecarUrl = absoluteUrl(process.env.SIDECAR_URL);
+  if (sidecarUrl) return sidecarUrl;
 
-  return DEFAULT_SIDECAR_INTERNAL_URL;
+  const publicUrl = absoluteUrl(process.env.NEXT_PUBLIC_SIDECAR_URL);
+  if (publicUrl) return publicUrl;
+
+  return process.env.NODE_ENV === "development"
+    ? DEFAULT_SIDECAR_INTERNAL_URL
+    : DEFAULT_PRODUCTION_SIDECAR_URL;
 }
 
 export async function POST(request: Request) {

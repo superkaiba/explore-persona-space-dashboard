@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Send, Sparkles, Wrench, Check, X as XIcon, ChevronDown } from "lucide-react";
 import { makeClientId } from "@/lib/client-id";
+import { postSidecarChat } from "@/lib/sidecar-client";
 
 type DbMessage = {
   id: string;
@@ -86,7 +87,6 @@ export function ConversationView({
   const [loaded, setLoaded] = useState(!sessionId);
   const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const sidecarUrlRef = useRef<string | null>(null);
   const sidecarSessionRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(sessionId);
   const localCreatedSessionIdsRef = useRef<Set<string>>(new Set());
@@ -226,7 +226,6 @@ export function ConversationView({
         token: string;
         sidecar_url: string;
       };
-      sidecarUrlRef.current = sidecar_url;
 
       // First message of this conversation needs claim context. Subsequent
       // messages in the same loaded session reuse the warm subprocess and
@@ -240,16 +239,9 @@ export function ConversationView({
         ? `${SIDECAR_CONTEXT_PREAMBLE(claimId, claimTitle)}\n\n${text}`
         : text;
 
-      const res = await fetch(`${sidecar_url}/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          session_id: sidecarSessionRef.current,
-          messages: [{ role: "user", content: userContent }],
-        }),
+      const res = await postSidecarChat(sidecar_url, token, {
+        session_id: sidecarSessionRef.current,
+        messages: [{ role: "user", content: userContent }],
       });
       if (!res.ok || !res.body) {
         const errTxt = await res.text().catch(() => res.statusText);

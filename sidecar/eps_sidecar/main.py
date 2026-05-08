@@ -202,7 +202,7 @@ Postgres is reachable directly via psql with the env var
 $DASHBOARD_DATABASE_URL (already set). Examples:
 
   # last 7 days of conversations across all claims
-  psql "$DASHBOARD_DATABASE_URL" -c \\
+  psql "${DASHBOARD_DATABASE_URL%%\\?*}" -c \\
     "SELECT s.id, s.scope_entity_id AS claim_id, c.title, s.last_user_email,
             s.last_message_at,
             (SELECT count(*) FROM chat_message WHERE session_id = s.id) AS msgs
@@ -212,17 +212,17 @@ $DASHBOARD_DATABASE_URL (already set). Examples:
    ORDER BY s.last_message_at DESC;"
 
   # full transcript of one conversation
-  psql "$DASHBOARD_DATABASE_URL" -c \\
+  psql "${DASHBOARD_DATABASE_URL%%\\?*}" -c \\
     "SELECT role, user_email, body, created_at FROM chat_message
       WHERE session_id = '<sid>' ORDER BY created_at;"
 
   # recent comments on a claim
-  psql "$DASHBOARD_DATABASE_URL" -c \\
+  psql "${DASHBOARD_DATABASE_URL%%\\?*}" -c \\
     "SELECT author_email, body, created_at FROM comment
       WHERE entity_kind='claim' AND entity_id='<claim-id>' ORDER BY created_at;"
 
   # append progress to a dashboard improvement run
-  psql "$DASHBOARD_DATABASE_URL" -c \\
+  psql "${DASHBOARD_DATABASE_URL%%\\?*}" -c \\
     "INSERT INTO agent_run_event (run_id, event_type, body)
      VALUES ('<run-id>', 'progress', 'Finished typecheck');"
 
