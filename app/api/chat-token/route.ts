@@ -18,6 +18,7 @@ export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const TOKEN_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_PRODUCTION_SIDECAR_URL = "https://chat.superkaiba.com";
 
 function b64url(bytes: ArrayBuffer | Uint8Array): string {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -51,7 +52,7 @@ export async function POST() {
   const secret = process.env.SIDECAR_SHARED_SECRET;
   const sidecarUrl =
     process.env.NEXT_PUBLIC_SIDECAR_URL ||
-    (process.env.NODE_ENV === "development" ? "/api/sidecar" : "");
+    (process.env.NODE_ENV === "development" ? "/api/sidecar" : DEFAULT_PRODUCTION_SIDECAR_URL);
   if (!secret || !sidecarUrl) {
     return Response.json({ error: "Sidecar not configured" }, { status: 503 });
   }
