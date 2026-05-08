@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getDb } from "@/db/client";
-import { chatSessions, chatMessages } from "@/db/schema";
+import { chatSessions } from "@/db/schema";
 import { sql } from "drizzle-orm";
+import { authUserOrDev } from "@/lib/dev-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +16,7 @@ async function userOrUnauth() {
   const {
     data: { user },
   } = await sb.auth.getUser();
-  return user;
+  return authUserOrDev(user);
 }
 
 export async function GET(
@@ -30,6 +32,7 @@ export async function GET(
     .select({
       id: chatSessions.id,
       title: chatSessions.title,
+      agentHandle: chatSessions.agentHandle,
       createdByUserId: chatSessions.createdByUserId,
       createdByUserEmail: chatSessions.createdByUserEmail,
       lastUserId: chatSessions.lastUserId,
@@ -62,17 +65,32 @@ export async function POST(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await ctx.params;
   const body = CreateBody.parse(await req.json().catch(() => ({})));
+  const sessionId = randomUUID();
   const db = getDb();
   const [row] = await db
     .insert(chatSessions)
     .values({
+      id: sessionId,
       scopeEntityKind: "claim",
       scopeEntityId: id,
+      agentHandle: `claim-${id.replace(/-/g, "").slice(0, 8)}-${sessionId
+        .replace(/-/g, "")
+        .slice(0, 12)}`,
       title: body.title ?? null,
       createdByUserId: user.id,
       createdByUserEmail: user.email ?? null,
     })
-    .returning();
+    .returning({
+      id: chatSessions.id,
+      title: chatSessions.title,
+      agentHandle: chatSessions.agentHandle,
+      createdByUserId: chatSessions.createdByUserId,
+      createdByUserEmail: chatSessions.createdByUserEmail,
+      lastUserId: chatSessions.lastUserId,
+      lastUserEmail: chatSessions.lastUserEmail,
+      lastMessageAt: chatSessions.lastMessageAt,
+      createdAt: chatSessions.createdAt,
+    });
   // Eagerly insert no messages; first user message creates the seed turn.
-  return NextResponse.json({ session: row });
+  return NextResponse.json({ session: { ...row, messageCount: 0 } });
 }

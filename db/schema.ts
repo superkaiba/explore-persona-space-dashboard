@@ -46,13 +46,28 @@ export const edgeTypeEnum = pgEnum("edge_type", [
   "supports",
   "contradicts",
   "derives_from",
+  "cites",
+  "inspired_by",
+  "tests",
+  "produces_evidence_for",
+  "blocks",
+  "answers",
+  "duplicates",
+  "method",
+  "baseline",
+  "background",
+  "threat",
+  "inspiration",
 ]);
 
 export const entityKindEnum = pgEnum("entity_kind", [
+  "project",
   "claim",
   "experiment",
   "run",
   "todo",
+  "research_idea",
+  "lit_item",
 ]);
 
 export const todoStatusEnum = pgEnum("todo_status", [
@@ -74,6 +89,24 @@ export const messageRoleEnum = pgEnum("message_role", [
   "user",
   "assistant",
   "tool",
+]);
+
+export const agentRunModeEnum = pgEnum("agent_run_mode", [
+  "clarify",
+  "direct_apply",
+  "sandbox_preview",
+]);
+
+export const agentRunStatusEnum = pgEnum("agent_run_status", [
+  "queued",
+  "running",
+  "awaiting_approval",
+  "approved",
+  "rejected",
+  "deploying",
+  "completed",
+  "failed",
+  "cancelled",
 ]);
 
 export const litItemTypeEnum = pgEnum("lit_item_type", [
@@ -121,6 +154,24 @@ export const researchIdeaStatusEnum = pgEnum("research_idea_status", [
   "developed",
   "abandoned",
 ]);
+
+export const projects = pgTable(
+  "project",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    status: text("status").notNull().default("active"),
+    summary: text("summary"),
+    public: boolean("public").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    slugUnique: uniqueIndex("project_slug_unique").on(t.slug),
+    statusIdx: index("project_status_idx").on(t.status, t.updatedAt),
+  }),
+);
 
 export const claims = pgTable("claim", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -276,6 +327,59 @@ export const chatMessages = pgTable(
   }),
 );
 
+export const agentRuns = pgTable(
+  "agent_run",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    mode: agentRunModeEnum("mode").notNull(),
+    status: agentRunStatusEnum("status").notNull().default("queued"),
+    request: text("request").notNull(),
+    summary: text("summary"),
+    chatSessionId: uuid("chat_session_id").references(() => chatSessions.id, {
+      onDelete: "set null",
+    }),
+    scopeEntityKind: entityKindEnum("scope_entity_kind"),
+    scopeEntityId: uuid("scope_entity_id"),
+    branchName: text("branch_name"),
+    worktreePath: text("worktree_path"),
+    baseSha: text("base_sha"),
+    headSha: text("head_sha"),
+    previewUrl: text("preview_url"),
+    productionUrl: text("production_url"),
+    vercelDeploymentUrl: text("vercel_deployment_url"),
+    changedFilesJson: jsonb("changed_files_json").$type<string[]>(),
+    checksJson: jsonb("checks_json").$type<Array<Record<string, unknown>>>(),
+    lastError: text("last_error"),
+    createdByUserId: uuid("created_by_user_id"),
+    createdByUserEmail: text("created_by_user_email"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    statusIdx: index("agent_run_status_idx").on(t.status, t.updatedAt),
+    chatSessionIdx: index("agent_run_chat_session_idx").on(t.chatSessionId, t.createdAt),
+  }),
+);
+
+export const agentRunEvents = pgTable(
+  "agent_run_event",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .references(() => agentRuns.id, { onDelete: "cascade" })
+      .notNull(),
+    eventType: text("event_type").notNull(),
+    body: text("body"),
+    metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    runIdx: index("agent_run_event_run_idx").on(t.runId, t.createdAt),
+  }),
+);
+
 export const litItems = pgTable(
   "lit_item",
   {
@@ -297,7 +401,7 @@ export const litItems = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true }),
     discoveredAt: timestamp("discovered_at", { withTimezone: true }).defaultNow().notNull(),
     workflowUpdatedAt: timestamp("workflow_updated_at", { withTimezone: true }),
-    public: boolean("public").notNull().default(true),
+    public: boolean("public").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -347,7 +451,7 @@ export const researchIdeas = pgTable(
     motivation: text("motivation"),
     nextExperiments: text("next_experiments"),
     sourcePath: text("source_path"),
-    public: boolean("public").notNull().default(true),
+    public: boolean("public").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -411,7 +515,7 @@ export const researchIdeaEvents = pgTable(
       .notNull(),
     eventType: text("event_type").notNull(),
     body: text("body").notNull(),
-    public: boolean("public").notNull().default(true),
+    public: boolean("public").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({
@@ -534,7 +638,9 @@ export const litItemQuestions = pgTable(
 );
 
 export type Claim = typeof claims.$inferSelect;
+export type Project = typeof projects.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
+export type NewProject = typeof projects.$inferInsert;
 export type Experiment = typeof experiments.$inferSelect;
 export type NewExperiment = typeof experiments.$inferInsert;
 export type Run = typeof runs.$inferSelect;
@@ -546,6 +652,10 @@ export type Comment = typeof comments.$inferSelect;
 export type AgentTask = typeof agentTasks.$inferSelect;
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+export type AgentRun = typeof agentRuns.$inferSelect;
+export type NewAgentRun = typeof agentRuns.$inferInsert;
+export type AgentRunEvent = typeof agentRunEvents.$inferSelect;
+export type NewAgentRunEvent = typeof agentRunEvents.$inferInsert;
 export type LitItem = typeof litItems.$inferSelect;
 export type LitItemAnalysis = typeof litItemAnalyses.$inferSelect;
 export type ResearchIdea = typeof researchIdeas.$inferSelect;

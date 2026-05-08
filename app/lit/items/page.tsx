@@ -93,7 +93,7 @@ export default async function LitItemsPage({
           litItemStates,
           and(eq(litItemStates.itemId, litItems.id), eq(litItemStates.userId, user.id)),
         )
-        .where(eq(litItems.public, true))
+        .where(undefined)
         .orderBy(desc(sql`coalesce(${litItems.publishedAt}, ${litItems.discoveredAt})`))
         .limit(200)
     : await db

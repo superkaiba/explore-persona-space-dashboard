@@ -17,7 +17,12 @@ import {
 import { ItemStateForm } from "@/components/lit/ItemStateForm";
 import { ItemQuestionForm } from "@/components/lit/ItemQuestionForm";
 import { LinkReviewControls } from "@/components/lit/LinkReviewControls";
+import { EntityComments } from "@/components/discussion/EntityComments";
+import { EntityLinkManager } from "@/components/entity/EntityLinkManager";
+import { RelatedEntitiesList } from "@/components/entity/RelatedEntitiesList";
 import { createClient } from "@/lib/supabase/server";
+import { getEntityOptions } from "@/lib/entity-options";
+import { getRelatedEntities } from "@/lib/related-entities";
 import {
   formatLitDate,
   formatLitType,
@@ -42,7 +47,7 @@ export default async function LitItemPage({
   const [item] = await db
     .select()
     .from(litItems)
-    .where(and(eq(litItems.id, id), eq(litItems.public, true)))
+    .where(user ? eq(litItems.id, id) : and(eq(litItems.id, id), eq(litItems.public, true)))
     .limit(1);
   if (!item) notFound();
 
@@ -66,7 +71,7 @@ export default async function LitItemPage({
     .innerJoin(researchIdeas, eq(researchIdeas.id, litIdeaLinks.ideaId))
     .where(
       user
-        ? and(eq(litIdeaLinks.itemId, id), eq(researchIdeas.public, true))
+        ? eq(litIdeaLinks.itemId, id)
         : and(
             eq(litIdeaLinks.itemId, id),
             eq(litIdeaLinks.status, "accepted"),
@@ -100,6 +105,11 @@ export default async function LitItemPage({
         .orderBy(desc(litItemQuestions.createdAt))
         .limit(20)
     : [];
+
+  const [related, linkOptions] = await Promise.all([
+    getRelatedEntities("lit_item", id, { includePrivate: !!user }),
+    user ? getEntityOptions() : Promise.resolve([]),
+  ]);
 
   const primaryAnalysis = analyses[0];
   const readableDocuments = documents.filter((document) => document.textMd || document.textPlain);
@@ -208,6 +218,26 @@ export default async function LitItemPage({
                 </div>
               </section>
             )}
+
+            <section>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h2 className="text-[12px] font-semibold tracking-tight">Workspace links</h2>
+                {user && (
+                  <EntityLinkManager
+                    fromKind="lit_item"
+                    fromId={item.id}
+                    options={linkOptions}
+                    compact
+                  />
+                )}
+              </div>
+              <RelatedEntitiesList items={related} />
+            </section>
+
+            <section>
+              <h2 className="mb-2 text-[12px] font-semibold tracking-tight">Notes</h2>
+              <EntityComments entityKind="lit_item" entityId={item.id} canPost={!!user} />
+            </section>
           </main>
 
           <aside className="flex flex-col gap-4">

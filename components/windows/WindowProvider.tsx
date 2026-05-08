@@ -2,7 +2,15 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-export type WindowKind = "claim" | "experiment" | "proposed" | "untriaged";
+export type WindowKind =
+  | "project"
+  | "claim"
+  | "experiment"
+  | "run"
+  | "proposed"
+  | "untriaged"
+  | "research_idea"
+  | "lit_item";
 
 export type OpenWindow = {
   /** entity id (e.g. claim uuid). Acts as the window's identity — clicking

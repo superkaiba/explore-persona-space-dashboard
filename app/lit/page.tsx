@@ -18,11 +18,11 @@ export default async function LitReviewPage() {
   const [itemCountRow] = await db
     .select({ value: count() })
     .from(litItems)
-    .where(eq(litItems.public, true));
+    .where(user ? undefined : eq(litItems.public, true));
   const [ideaCountRow] = await db
     .select({ value: count() })
     .from(researchIdeas)
-    .where(eq(researchIdeas.public, true));
+    .where(user ? undefined : eq(researchIdeas.public, true));
 
   const recentItems = await db
     .select({
@@ -35,7 +35,7 @@ export default async function LitReviewPage() {
       summary: litItems.summary,
     })
     .from(litItems)
-    .where(eq(litItems.public, true))
+    .where(user ? undefined : eq(litItems.public, true))
     .orderBy(desc(sql`coalesce(${litItems.publishedAt}, ${litItems.discoveredAt})`))
     .limit(10);
 
@@ -49,7 +49,7 @@ export default async function LitReviewPage() {
       updatedAt: researchIdeas.updatedAt,
     })
     .from(researchIdeas)
-    .where(eq(researchIdeas.public, true))
+    .where(user ? undefined : eq(researchIdeas.public, true))
     .orderBy(desc(researchIdeas.updatedAt))
     .limit(8);
 

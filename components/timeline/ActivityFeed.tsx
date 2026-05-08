@@ -26,6 +26,19 @@ const KIND_LABEL: Record<FeedItem["kind"], string> = {
   untriaged: "untriaged",
 };
 
+function statusBadgeClass(status: string | null | undefined): string {
+  if (!status) return "bg-subtle text-fg";
+  if (status === "planning") return "bg-sky-600 text-white";
+  if (status === "plan_pending") return "bg-amber-500 text-black";
+  if (status === "blocked") return "bg-red-600 text-white";
+  if (status === "awaiting_promotion") return "bg-fuchsia-600 text-white";
+  if (["running", "uploading", "implementing", "code_reviewing"].includes(status)) {
+    return "bg-blue-600 text-white";
+  }
+  if (["interpreting", "reviewing"].includes(status)) return "bg-cyan-600 text-white";
+  return "bg-slate-600 text-white";
+}
+
 function asDate(v: Date | string): Date {
   return v instanceof Date ? v : new Date(v);
 }
@@ -133,7 +146,9 @@ function Row({ item }: { item: FeedItem }) {
             </span>
           )}
           {item.kind === "experiment" && item.status && (
-            <span className="rounded bg-running/15 px-1 py-0.5 text-[9px] font-medium normal-case tracking-normal text-running">
+            <span
+              className={`rounded px-1 py-0.5 text-[9px] font-semibold normal-case tracking-normal ${statusBadgeClass(item.status)}`}
+            >
               {item.status.replace(/_/g, " ")}
             </span>
           )}

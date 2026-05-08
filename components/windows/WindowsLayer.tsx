@@ -6,17 +6,23 @@ import { X } from "lucide-react";
 import { useWindows } from "./WindowProvider";
 import { EntityWindowContent } from "./EntityWindowContent";
 import { createClient } from "@/lib/supabase/client";
+import { DEV_USER_EMAIL, isDevAuthBypass } from "@/lib/dev-auth";
 
 const KIND_LABEL: Record<string, string> = {
+  project: "project",
   claim: "claim",
   experiment: "experiment",
-  proposed: "proposed",
+  run: "run",
+  proposed: "task",
   untriaged: "untriaged",
+  research_idea: "idea",
+  lit_item: "literature",
 };
 
 export function WindowsLayer() {
   const { windows, close, focus, move, resize } = useWindows();
-  const [email, setEmail] = useState<string | null>(null);
+  const devEmail = isDevAuthBypass() ? DEV_USER_EMAIL : null;
+  const [email, setEmail] = useState<string | null>(devEmail);
 
   // Track current user email and keep it live across sign-in / sign-out so
   // open windows update immediately after the inline magic-link flow.
@@ -24,12 +30,12 @@ export function WindowsLayer() {
   useEffect(() => {
     const supabase = createClient();
     const refresh = () =>
-      supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
+      supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? devEmail));
     refresh();
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setEmail(session?.user?.email ?? null);
+      setEmail(session?.user?.email ?? devEmail);
     });
     window.addEventListener("focus", refresh);
     window.addEventListener("storage", refresh);
@@ -38,7 +44,7 @@ export function WindowsLayer() {
       window.removeEventListener("focus", refresh);
       window.removeEventListener("storage", refresh);
     };
-  }, []);
+  }, [devEmail]);
 
   if (windows.length === 0) return null;
 

@@ -3,7 +3,7 @@
  * sidecar directly (bypassing Vercel for the SSE stream).
  *
  *   POST /api/chat-token
- *     auth: Supabase magic-link session (cookie)
+ *     auth: Supabase magic-link session (cookie), bypassed in local dev
  *     -> 200 {token, sidecar_url, expires_at}
  *     -> 401 if not signed in
  *
@@ -12,6 +12,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { authUserOrDev } from "@/lib/dev-auth";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -43,10 +44,14 @@ export async function POST() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!authUserOrDev(user)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const secret = process.env.SIDECAR_SHARED_SECRET;
-  const sidecarUrl = process.env.NEXT_PUBLIC_SIDECAR_URL;
+  const sidecarUrl =
+    process.env.NEXT_PUBLIC_SIDECAR_URL ||
+    (process.env.NODE_ENV === "development" ? "/api/sidecar" : "");
   if (!secret || !sidecarUrl) {
     return Response.json({ error: "Sidecar not configured" }, { status: 503 });
   }

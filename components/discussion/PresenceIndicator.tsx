@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { makeClientId } from "@/lib/client-id";
 
 type Presence = {
   user_id: string;
@@ -30,12 +31,12 @@ export function PresenceIndicator({ claimId, selfEmail }: Props) {
         const k = "eps-tab-id";
         let v = window.sessionStorage.getItem(k);
         if (!v) {
-          v = crypto.randomUUID();
+          v = makeClientId("tab");
           window.sessionStorage.setItem(k, v);
         }
         return v;
       } catch {
-        return crypto.randomUUID();
+        return makeClientId("tab");
       }
     })();
 

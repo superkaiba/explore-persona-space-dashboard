@@ -4,18 +4,12 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getDb } from "@/db/client";
 import { edges } from "@/db/schema";
+import { EDGE_TYPES, ENTITY_KINDS } from "@/lib/entities";
 
 export const runtime = "nodejs";
 
-const KIND = z.enum(["claim", "experiment", "run", "todo"]);
-const TYPE = z.enum([
-  "parent",
-  "child",
-  "sibling",
-  "supports",
-  "contradicts",
-  "derives_from",
-]);
+const KIND = z.enum(ENTITY_KINDS);
+const TYPE = z.enum(EDGE_TYPES);
 const Body = z.object({
   fromKind: KIND,
   fromId: z.string().uuid(),

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Send, Sparkles, Wrench, Check, X as XIcon, ChevronDown } from "lucide-react";
+import { makeClientId } from "@/lib/client-id";
 
 type DbMessage = {
   id: string;
@@ -41,8 +42,10 @@ type LiveMsg =
 type Props = {
   claimId: string;
   claimTitle: string;
-  sessionId: string;
+  sessionId: string | null;
   currentUserEmail: string | null;
+  createSession?: () => Promise<string | null>;
+  onSessionCreated?: (sessionId: string) => void;
 };
 
 const SIDECAR_CONTEXT_PREAMBLE = (claimId: string, title: string) =>
@@ -69,31 +72,78 @@ function buildLiveFromDb(rows: DbMessage[]): LiveMsg[] {
   return out;
 }
 
-export function ConversationView({ claimId, claimTitle, sessionId, currentUserEmail }: Props) {
+export function ConversationView({
+  claimId,
+  claimTitle,
+  sessionId,
+  currentUserEmail,
+  createSession,
+  onSessionCreated,
+}: Props) {
   const [messages, setMessages] = useState<LiveMsg[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(!sessionId);
+  const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sidecarUrlRef = useRef<string | null>(null);
   const sidecarSessionRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string | null>(sessionId);
+  const localCreatedSessionIdsRef = useRef<Set<string>>(new Set());
+  const messagesSessionIdRef = useRef<string | null>(sessionId);
 
   // Load DB history
   useEffect(() => {
     let cancelled = false;
+    sessionIdRef.current = sessionId ?? createdSessionId;
+    sidecarSessionRef.current = null;
+
+    if (!sessionId) {
+      setMessages([]);
+      setLoaded(true);
+      messagesSessionIdRef.current = null;
+      return;
+    }
+
+    if (
+      localCreatedSessionIdsRef.current.has(sessionId) &&
+      messagesSessionIdRef.current === sessionId
+    ) {
+      setLoaded(true);
+      return;
+    }
+
+    setLoaded(false);
+    setMessages([]);
     (async () => {
       const r = await fetch(`/api/conversations/${sessionId}/messages`);
       if (!r.ok) return;
       const j = (await r.json()) as { messages: DbMessage[] };
       if (!cancelled) {
         setMessages(buildLiveFromDb(j.messages));
+        messagesSessionIdRef.current = sessionId;
         setLoaded(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, createdSessionId]);
+
+  async function ensureSessionId(): Promise<string | null> {
+    if (sessionIdRef.current) return sessionIdRef.current;
+    if (!createSession) return null;
+
+    const nextSessionId = await createSession();
+    if (!nextSessionId) return null;
+
+    localCreatedSessionIdsRef.current.add(nextSessionId);
+    sessionIdRef.current = nextSessionId;
+    messagesSessionIdRef.current = nextSessionId;
+    setCreatedSessionId(nextSessionId);
+    onSessionCreated?.(nextSessionId);
+    return nextSessionId;
+  }
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -101,13 +151,13 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
     }
   }, [messages]);
 
-  async function persistAssistant(blocks: Block[]) {
+  async function persistAssistant(blocks: Block[], sid: string) {
     const tools = blocks.filter((b): b is ToolBlock => b.kind === "tool");
     const text = blocks
       .filter((b): b is TextBlock => b.kind === "text")
       .map((b) => b.text)
       .join("");
-    await fetch(`/api/conversations/${sessionId}/messages`, {
+    await fetch(`/api/conversations/${sid}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -118,8 +168,8 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
     });
   }
 
-  async function persistUser(text: string) {
-    await fetch(`/api/conversations/${sessionId}/messages`, {
+  async function persistUser(text: string, sid: string) {
+    await fetch(`/api/conversations/${sid}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: "user", body: text }),
@@ -132,8 +182,8 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
     if (!text || pending) return;
     setDraft("");
 
-    const userId = crypto.randomUUID();
-    const assistantId = crypto.randomUUID();
+    const userId = makeClientId("msg");
+    const assistantId = makeClientId("msg");
     const isFirstTurn = messages.filter((m) => m.role === "assistant").length === 0;
     setMessages((m) => [
       ...m,
@@ -148,8 +198,6 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
     ]);
     setPending(true);
 
-    void persistUser(text);
-
     const updateAssistant = (fn: (msg: Extract<LiveMsg, { role: "assistant" }>) => void) => {
       setMessages((all) =>
         all.map((msg) => {
@@ -162,6 +210,11 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
     };
 
     try {
+      const sid = await ensureSessionId();
+      if (!sid) throw new Error("Could not start conversation");
+
+      void persistUser(text, sid);
+
       // Mint sidecar token via Vercel
       const tok = await fetch("/api/chat-token", { method: "POST" });
       if (!tok.ok) {
@@ -179,7 +232,7 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
       // messages in the same loaded session reuse the warm subprocess and
       // already have it.
       if (!sidecarSessionRef.current) {
-        sidecarSessionRef.current = `claim-${claimId}-${sessionId.slice(0, 8)}`;
+        sidecarSessionRef.current = `claim-${claimId}-${sid.slice(0, 8)}`;
       }
 
       const isFirst = messages.filter((m) => m.role === "assistant").length === 0;
@@ -254,7 +307,7 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
             updateAssistant((m) =>
               m.blocks.push({
                 kind: "tool",
-                id: (data.id as string) ?? crypto.randomUUID(),
+                id: (data.id as string) ?? makeClientId("tool"),
                 name: (data.name as string) ?? "?",
                 input: (data.input as Record<string, unknown>) ?? {},
               }),
@@ -280,7 +333,7 @@ export function ConversationView({ claimId, claimTitle, sessionId, currentUserEm
               const final = all.find(
                 (mm) => mm.id === assistantId && mm.role === "assistant",
               ) as Extract<LiveMsg, { role: "assistant" }> | undefined;
-              if (final) void persistAssistant(final.blocks);
+              if (final) void persistAssistant(final.blocks, sid);
               return all;
             });
           }

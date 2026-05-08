@@ -9,6 +9,11 @@ import { EditableTitle } from "@/components/editor/EditableTitle";
 import { EditableBody } from "@/components/editor/EditableBody";
 import { EdgeManager } from "@/components/editor/EdgeManager";
 import { ClaimDiscussion } from "@/components/discussion/ClaimDiscussion";
+import { EntityLinkManager } from "@/components/entity/EntityLinkManager";
+import { RelatedEntitiesList } from "@/components/entity/RelatedEntitiesList";
+import { emailOrDev, isDevAuthBypass } from "@/lib/dev-auth";
+import { getEntityOptions } from "@/lib/entity-options";
+import { getRelatedEntities } from "@/lib/related-entities";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +32,19 @@ const CONF_DOT: Record<NonNullable<Confidence>, string> = {
   LOW: "bg-confidence-low",
 };
 
+function statusBadgeClass(status: string | null): string {
+  if (!status) return "bg-subtle text-fg";
+  if (status === "planning") return "bg-sky-600 text-white";
+  if (status === "plan_pending") return "bg-amber-500 text-black";
+  if (status === "blocked") return "bg-red-600 text-white";
+  if (status === "awaiting_promotion") return "bg-fuchsia-600 text-white";
+  if (["running", "uploading", "implementing", "code_reviewing"].includes(status)) {
+    return "bg-blue-600 text-white";
+  }
+  if (["interpreting", "reviewing"].includes(status)) return "bg-cyan-600 text-white";
+  return "bg-slate-600 text-white";
+}
+
 export default async function ClaimPage({
   params,
 }: {
@@ -42,6 +60,7 @@ export default async function ClaimPage({
     data: { user },
   } = await supabase.auth.getUser();
   const canEdit = !!user;
+  const devChatEnabled = isDevAuthBypass();
 
   // All-claims option list for the EdgeManager (loaded only if editable)
   const allClaimOptions = canEdit
@@ -54,6 +73,7 @@ export default async function ClaimPage({
         })
         .from(claims)
     : [];
+  const linkOptions = canEdit ? await getEntityOptions() : [];
 
   // Hero figure
   let hero: { url: string; caption: string | null } | null = null;
@@ -137,10 +157,13 @@ export default async function ClaimPage({
   const linkedTodosList = incoming
     .filter((e) => e.fromKind === "todo")
     .map((e) => todoById.get(e.fromId))
-    .filter(Boolean) as { id: string; text: string; kind: string; githubIssueNumber: number | null }[];
+    .filter((t): t is { id: string; text: string; kind: string; githubIssueNumber: number | null } =>
+      t != null && t.kind === "proposed",
+    );
 
   const body = claim.bodyJson as BodyJson;
   const markdown = body?.text ?? "";
+  const related = await getRelatedEntities("claim", claim.id, { includePrivate: canEdit });
 
   return (
     <div className="h-full overflow-y-auto">
@@ -194,8 +217,9 @@ export default async function ClaimPage({
           <ClaimDiscussion
             claimId={claim.id}
             claimTitle={claim.title}
-            canPost={canEdit}
-            currentUserEmail={user?.email ?? null}
+            canChat={canEdit || devChatEnabled}
+            canPostComments={canEdit}
+            currentUserEmail={emailOrDev(user?.email)}
           />
         </div>
 
@@ -222,7 +246,7 @@ export default async function ClaimPage({
             </Group>
           )}
           {linkedTodosList.length > 0 && (
-            <Group title="Open work" help="Proposed / untriaged issues that reference this claim">
+            <Group title="Open work" help="Todo issues that reference this claim">
               {linkedTodosList.map((t) => (
                 <TodoRow key={t.id} t={t} />
               ))}
@@ -245,6 +269,19 @@ export default async function ClaimPage({
               ])
             }
           />}
+          <Group title="Workspace links" help="All graph links touching this claim">
+            <li className="list-none">
+              <RelatedEntitiesList items={related} />
+            </li>
+          </Group>
+          {canEdit && (
+            <EntityLinkManager
+              fromKind="claim"
+              fromId={claim.id}
+              options={linkOptions}
+              compact
+            />
+          )}
         </aside>
       </article>
     </div>
@@ -319,7 +356,7 @@ function ExperimentRow({
       >
         <div className="flex items-center gap-2">
           {e.status && (
-            <span className="rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium text-running">
+            <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${statusBadgeClass(e.status)}`}>
               {e.status.replace(/_/g, " ")}
             </span>
           )}
@@ -340,25 +377,16 @@ function TodoRow({
 }) {
   return (
     <li>
-      <a
-        href={
-          t.githubIssueNumber != null
-            ? `https://github.com/superkaiba/explore-persona-space/issues/${t.githubIssueNumber}`
-            : "#"
-        }
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`panel flex items-start gap-2 rounded-md border-l-4 p-2 transition-colors hover:bg-subtle ${
-          t.kind === "untriaged" ? "border-l-untriaged" : "border-l-proposed"
-        }`}
+      <Link
+        href={`/task/${t.id}`}
+        className="panel flex items-start gap-2 rounded-md border-l-4 border-l-violet-500 p-2 transition-colors hover:bg-subtle"
       >
-        <span
-          className={`mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-            t.kind === "untriaged" ? "bg-untriaged" : "bg-proposed"
-          }`}
-        />
+        <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
         <div className="flex-1 leading-snug">{t.text}</div>
-      </a>
+        {t.githubIssueNumber != null && (
+          <span className="font-mono text-[10px] text-muted">#{t.githubIssueNumber}</span>
+        )}
+      </Link>
     </li>
   );
 }

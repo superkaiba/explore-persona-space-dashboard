@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getDb } from "@/db/client";
 import { chatMessages, chatSessions } from "@/db/schema";
+import { authUserOrDev } from "@/lib/dev-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,8 @@ export async function POST(
   const {
     data: { user },
   } = await sb.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const authedUser = authUserOrDev(user);
+  if (!authedUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { sid } = await ctx.params;
   const parsed = Append.safeParse(await req.json());
@@ -59,8 +61,8 @@ export async function POST(
     role: m.role,
     body: m.body,
     toolCallJson: m.toolCallJson as object | undefined,
-    userId: m.role === "user" ? user.id : null,
-    userEmail: m.role === "user" ? user.email ?? null : null,
+    userId: m.role === "user" ? authedUser.id : null,
+    userEmail: m.role === "user" ? authedUser.email ?? null : null,
   });
 
   // Bump session "last-spoken" metadata if this was a user message.
@@ -68,8 +70,8 @@ export async function POST(
     await db
       .update(chatSessions)
       .set({
-        lastUserId: user.id,
-        lastUserEmail: user.email ?? null,
+        lastUserId: authedUser.id,
+        lastUserEmail: authedUser.email ?? null,
         lastMessageAt: new Date(),
       })
       .where(eq(chatSessions.id, sid));

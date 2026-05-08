@@ -3,6 +3,7 @@ import { inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db/client";
 import {
+  edges,
   litDigestRuns,
   litIdeaLinks,
   litItemDocumentChunks,
@@ -46,7 +47,7 @@ const ItemPayload = z.object({
   publishedAt: z.string().trim().optional().nullable(),
   discoveredAt: z.string().trim().optional().nullable(),
   workflowUpdatedAt: z.string().trim().optional().nullable(),
-  public: z.boolean().default(true),
+  public: z.boolean().default(false),
 });
 
 const AnalysisPayload = z.object({
@@ -73,7 +74,7 @@ const IdeaPayload = z.object({
   motivation: nullableText,
   nextExperiments: nullableText,
   sourcePath: z.string().trim().max(5000).optional().nullable(),
-  public: z.boolean().default(true),
+  public: z.boolean().default(false),
   updatedAt: z.string().trim().optional().nullable(),
 });
 
@@ -106,7 +107,7 @@ const EventPayload = z.object({
   ideaSlug: z.string().trim().min(1).max(120).optional().nullable(),
   eventType: z.string().trim().min(1).max(5000),
   body: z.string().trim().min(1).max(500000),
-  public: z.boolean().default(true),
+  public: z.boolean().default(false),
   createdAt: z.string().trim().optional().nullable(),
 });
 
@@ -506,6 +507,19 @@ export async function POST(req: NextRequest) {
           updatedAt: excluded("updated_at"),
         },
       });
+
+    const acceptedEdgeRows = linkRows
+      .filter((link) => link.status === "accepted")
+      .map((link) => ({
+        fromKind: "research_idea" as const,
+        fromId: link.ideaId,
+        toKind: "lit_item" as const,
+        toId: link.itemId,
+        type: link.relationType ?? "background",
+      }));
+    if (acceptedEdgeRows.length > 0) {
+      await db.insert(edges).values(acceptedEdgeRows).onConflictDoNothing();
+    }
   }
 
   let skippedEvents = 0;

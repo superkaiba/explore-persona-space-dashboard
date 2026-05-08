@@ -13,17 +13,25 @@ type Resolved = {
 };
 
 const KIND_DOT: Record<WindowKind, string> = {
+  project: "bg-fg",
   claim: "bg-confidence-low",
   experiment: "bg-running",
+  run: "bg-cyan-600",
   proposed: "bg-proposed",
   untriaged: "bg-untriaged",
+  research_idea: "bg-amber-500",
+  lit_item: "bg-emerald-600",
 };
 
 const KIND_LABEL: Record<WindowKind, string> = {
+  project: "project",
   claim: "claim",
   experiment: "in progress",
-  proposed: "proposed",
+  run: "run",
+  proposed: "task",
   untriaged: "untriaged",
+  research_idea: "idea",
+  lit_item: "literature",
 };
 
 const cache = new Map<number, Resolved | "missing">();

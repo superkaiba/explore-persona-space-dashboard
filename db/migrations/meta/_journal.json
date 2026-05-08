@@ -5,8 +5,57 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1778061653600,
-      "tag": "0000_dark_viper",
+      "when": 1778055679880,
+      "tag": "0000_stormy_lilandra",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778059029748,
+      "tag": "0001_sleepy_katie_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778059029749,
+      "tag": "0002_research_task_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778059029750,
+      "tag": "0003_lit_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778059029751,
+      "tag": "0004_lit_full_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778059029752,
+      "tag": "0005_unified_research_graph",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778059029753,
+      "tag": "0006_backfill_lit_edges",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1778059029754,
+      "tag": "0007_agent_runs",
       "breakpoints": true
     }
   ]

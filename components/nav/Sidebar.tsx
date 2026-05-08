@@ -2,10 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Network, Activity, ListTodo, CalendarDays, Sparkles, Plus, BookOpen } from "lucide-react";
+import {
+  Network,
+  Activity,
+  ListTodo,
+  CalendarDays,
+  Sparkles,
+  Plus,
+  BookOpen,
+  Inbox,
+  FolderKanban,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
+  { href: "/inbox", label: "Inbox", icon: Inbox },
+  { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/graph", label: "Graph", icon: Network },
   { href: "/live", label: "Queue", icon: Activity },
   { href: "/todos", label: "Tasks", icon: ListTodo },

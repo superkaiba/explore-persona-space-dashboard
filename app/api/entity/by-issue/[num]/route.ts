@@ -57,7 +57,7 @@ export async function GET(
   }
 
   const [t] = await db
-    .select({ id: todos.id, text: todos.text, kind: todos.kind })
+    .select({ id: todos.id, text: todos.text, kind: todos.kind, status: todos.status })
     .from(todos)
     .where(eq(todos.githubIssueNumber, num))
     .limit(1);
@@ -66,6 +66,7 @@ export async function GET(
       kind: t.kind === "untriaged" ? ("untriaged" as const) : ("proposed" as const),
       id: t.id,
       title: t.text,
+      status: t.status,
       githubIssueNumber: num,
     });
   }

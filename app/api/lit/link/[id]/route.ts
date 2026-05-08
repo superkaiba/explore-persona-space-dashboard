@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db/client";
-import { litIdeaLinks, researchIdeaEvents } from "@/db/schema";
+import { edges, litIdeaLinks, researchIdeaEvents } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { LIT_LINK_STATUSES } from "@/lib/lit";
 
@@ -37,6 +37,8 @@ export async function PATCH(
     .returning({
       id: litIdeaLinks.id,
       ideaId: litIdeaLinks.ideaId,
+      itemId: litIdeaLinks.itemId,
+      relationType: litIdeaLinks.relationType,
       status: litIdeaLinks.status,
     });
 
@@ -49,6 +51,31 @@ export async function PATCH(
     public: false,
     createdAt: now,
   });
+
+  if (link.status === "accepted") {
+    await db
+      .insert(edges)
+      .values({
+        fromKind: "research_idea",
+        fromId: link.ideaId,
+        toKind: "lit_item",
+        toId: link.itemId,
+        type: link.relationType,
+      })
+      .onConflictDoNothing();
+  } else {
+    await db
+      .delete(edges)
+      .where(
+        and(
+          eq(edges.fromKind, "research_idea"),
+          eq(edges.fromId, link.ideaId),
+          eq(edges.toKind, "lit_item"),
+          eq(edges.toId, link.itemId),
+          eq(edges.type, link.relationType),
+        ),
+      );
+  }
 
   return NextResponse.json({ ok: true, link });
 }

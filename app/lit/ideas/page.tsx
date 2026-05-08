@@ -2,12 +2,17 @@ import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { researchIdeas } from "@/db/schema";
+import { createClient } from "@/lib/supabase/server";
 import { formatLitDate } from "@/lib/lit";
 
 export const dynamic = "force-dynamic";
 
 export default async function LitIdeasPage() {
   const db = getDb();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const ideas = await db
     .select({
       id: researchIdeas.id,
@@ -19,7 +24,7 @@ export default async function LitIdeasPage() {
       updatedAt: researchIdeas.updatedAt,
     })
     .from(researchIdeas)
-    .where(eq(researchIdeas.public, true))
+    .where(user ? undefined : eq(researchIdeas.public, true))
     .orderBy(desc(researchIdeas.updatedAt))
     .limit(200);
 

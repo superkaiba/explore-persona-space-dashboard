@@ -26,8 +26,8 @@ function fmtRelative(d: string | null): string {
 
 /**
  * Compact per-claim chat embedded in a window. Auto-loads the most recent
- * conversation; otherwise spawns a fresh one. Lets the user switch / start
- * a new one via a thin selector at the top.
+ * saved conversation; otherwise shows a draft chat surface and only creates
+ * the DB conversation when the first message is sent.
  */
 export function ClaimChatTab({
   claimId,
@@ -57,7 +57,7 @@ export function ClaimChatTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimId]);
 
-  async function startNew() {
+  async function createSession() {
     setCreating(true);
     try {
       const r = await fetch(`/api/claim/${claimId}/conversations`, {
@@ -66,12 +66,11 @@ export function ClaimChatTab({
         body: "{}",
       });
       if (!r.ok) {
-        alert(`Failed: ${await r.text()}`);
-        return;
+        throw new Error(await r.text());
       }
       const j = (await r.json()) as { session: Session };
       setSessions((s) => [j.session, ...s]);
-      setActiveSid(j.session.id);
+      return j.session.id;
     } finally {
       setCreating(false);
     }
@@ -87,26 +86,27 @@ export function ClaimChatTab({
             <select
               value={activeSid ?? ""}
               onChange={(e) => setActiveSid(e.target.value || null)}
+              disabled={creating}
               className="rounded border border-border bg-panel px-1.5 py-0.5 text-[11px] focus:border-running focus:outline-none"
             >
-              {sessions.length === 0 && <option value="">No conversations</option>}
+              <option value="">New conversation</option>
               {sessions.map((s) => (
                 <option key={s.id} value={s.id}>
                   {fmtRelative(s.lastMessageAt ?? s.createdAt)}
                   {s.lastUserEmail ? ` · ${s.lastUserEmail}` : ""}
-                  {` · ${s.messageCount}`}
+                  {` · ${s.messageCount ?? 0}`}
                 </option>
               ))}
             </select>
             <button
               type="button"
-              onClick={startNew}
+              onClick={() => setActiveSid(null)}
               disabled={creating}
-              title="Start a new conversation"
+              title="Start a new draft"
               className="ml-auto inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-0.5 text-muted transition-colors hover:bg-border hover:text-fg disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Plus className="h-3 w-3" />
-              {creating ? "Starting…" : "New"}
+              New
             </button>
           </>
         ) : (
@@ -116,18 +116,15 @@ export function ClaimChatTab({
       <div className="flex-1 overflow-hidden p-5">
         {!currentUserEmail ? (
           <SignInPrompt />
-        ) : activeSid ? (
+        ) : (
           <ConversationView
-            key={activeSid}
             claimId={claimId}
             claimTitle={claimTitle}
             sessionId={activeSid}
             currentUserEmail={currentUserEmail}
+            createSession={createSession}
+            onSessionCreated={setActiveSid}
           />
-        ) : (
-          <p className="text-[12px] text-muted">
-            No conversations yet. Click <strong>+ New</strong> above to start one.
-          </p>
         )}
       </div>
     </div>

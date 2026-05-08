@@ -1,8 +1,8 @@
 /**
  * Backfill Supabase from GitHub issues:
  *   - clean-results-labeled issues   -> claim rows + figure (hero) + edges (derives_from)
- *   - in-progress status:* issues    -> experiment rows (with mapped status enum)
- *   - status:proposed open issues    -> todo rows
+ *   - tracked status:* issues        -> experiment rows (with mapped status enum)
+ *   - status:todo/proposed issues    -> todo rows
  *
  * Where the body has "Parent: #N" or a "## Source issues" section, we wire
  * a `derives_from` edge from todo/experiment -> claim.
@@ -105,7 +105,9 @@ function parseParentRef(body: string): number | null {
 const IN_PROGRESS_LABELS = new Set([
   "status:planning",
   "status:plan-pending",
+  "status:plan-awaiting-review",
   "status:approved",
+  "status:in-flight",
   "status:implementing",
   "status:code-reviewing",
   "status:running",
@@ -113,9 +115,18 @@ const IN_PROGRESS_LABELS = new Set([
   "status:interpreting",
   "status:reviewing",
   "status:awaiting-promotion",
+  "status:blocked",
+  "status:followups-running",
+  "followups-running",
 ]);
 function statusLabelToEnum(label: string): string {
+  if (label === "status:plan-awaiting-review") return "plan_pending";
+  if (label === "status:in-flight") return "running";
+  if (label === "status:followups-running" || label === "followups-running") return "running";
   return label.replace(/^status:/, "").replace(/-/g, "_");
+}
+function isFollowupsRunning(labels: string[]): boolean {
+  return labels.includes("status:followups-running") || labels.includes("followups-running");
 }
 
 async function findEntityByIssue(num: number): Promise<{ kind: "claim" | "experiment"; id: string } | null> {
@@ -204,32 +215,34 @@ async function backfillExperiments() {
     "--json", "number,title,body,createdAt,updatedAt,labels",
   ]);
 
-  const inProgress = issues.filter((iss) => {
+  const tracked = issues.filter((iss) => {
     const labels = (iss.labels ?? []).map((l) => l.name);
     if (labels.includes("clean-results")) return false;
     return labels.some((l) => IN_PROGRESS_LABELS.has(l));
   });
-  console.log(`📥  ${inProgress.length} in-progress experiments`);
+  console.log(`📥  ${tracked.length} tracked experiments`);
 
   let count = 0;
   let edgeCount = 0;
-  for (const iss of inProgress) {
+  for (const iss of tracked) {
     const labels = (iss.labels ?? []).map((l) => l.name);
     const statusLabel = labels.find((l) => IN_PROGRESS_LABELS.has(l)) ?? "status:running";
     const status = statusLabelToEnum(statusLabel);
+    const podName = isFollowupsRunning(labels) ? "followups_running" : null;
     const parentRef = parseParentRef(iss.body ?? "");
     const parent = parentRef ? await findEntityByIssue(parentRef) : null;
     const claimId = parent?.kind === "claim" ? parent.id : null;
     const planJson = { kind: "markdown", text: iss.body ?? "" };
 
     const [row] = await sql<{ id: string }[]>`
-      INSERT INTO experiment (title, status, plan_json, github_issue_number, claim_id, created_at, updated_at)
-      VALUES (${iss.title}, ${status}::experiment_status, ${sql.json(planJson)}, ${iss.number}, ${claimId}, ${iss.createdAt}, ${iss.updatedAt})
+      INSERT INTO experiment (title, status, plan_json, github_issue_number, claim_id, pod_name, created_at, updated_at)
+      VALUES (${iss.title}, ${status}::experiment_status, ${sql.json(planJson)}, ${iss.number}, ${claimId}, ${podName}, ${iss.createdAt}, ${iss.updatedAt})
       ON CONFLICT (github_issue_number) DO UPDATE SET
         title = EXCLUDED.title,
         status = EXCLUDED.status,
         plan_json = EXCLUDED.plan_json,
         claim_id = EXCLUDED.claim_id,
+        pod_name = EXCLUDED.pod_name,
         updated_at = EXCLUDED.updated_at
       RETURNING id
     `;
@@ -247,7 +260,7 @@ async function backfillExperiments() {
   console.log(`✅ ${count} experiments · ${edgeCount} experiment→parent edges`);
 }
 
-async function backfillTodosAndUntriaged() {
+async function backfillTodos() {
   // One query for all open issues, then split client-side by labels.
   const issues = gh<GhIssue[]>([
     "issue", "list",
@@ -257,55 +270,39 @@ async function backfillTodosAndUntriaged() {
     "--json", "number,title,body,createdAt,updatedAt,labels",
   ]);
 
-  const allStatusLabels = new Set([
-    "status:proposed",
-    ...IN_PROGRESS_LABELS,
-    "status:done-experiment",
-    "status:done-impl",
-    "status:blocked",
-    "status:archived",
-  ]);
-
   const proposed: GhIssue[] = [];
-  const untriaged: GhIssue[] = [];
   for (const iss of issues) {
     const labels = (iss.labels ?? []).map((l) => l.name);
     if (labels.includes("clean-results")) continue;
-    if (labels.includes("status:proposed")) proposed.push(iss);
-    else if (!labels.some((l) => allStatusLabels.has(l))) untriaged.push(iss);
+    if (labels.includes("status:todo") || labels.includes("status:proposed")) proposed.push(iss);
   }
-  console.log(`📥  ${proposed.length} proposed · ${untriaged.length} untriaged`);
+  console.log(`📥  ${proposed.length} todos`);
 
   let count = 0;
   let edgeCount = 0;
-  for (const [kind, group] of [
-    ["proposed", proposed],
-    ["untriaged", untriaged],
-  ] as const) {
-    for (const iss of group) {
-      const text = `#${iss.number} — ${iss.title}`;
-      const parentRef = parseParentRef(iss.body ?? "");
-      const parent = parentRef ? await findEntityByIssue(parentRef) : null;
+  for (const iss of proposed) {
+    const text = `#${iss.number} — ${iss.title}`;
+    const parentRef = parseParentRef(iss.body ?? "");
+    const parent = parentRef ? await findEntityByIssue(parentRef) : null;
 
-      const [row] = await sql<{ id: string }[]>`
-        INSERT INTO todo (text, status, kind, github_issue_number, linked_kind, linked_id, created_at)
-        VALUES (${text}, ${"open"}, ${kind}, ${iss.number}, ${parent?.kind ?? null}, ${parent?.id ?? null}, ${iss.createdAt})
-        ON CONFLICT (github_issue_number) DO UPDATE SET
-          text = EXCLUDED.text,
-          kind = EXCLUDED.kind,
-          linked_kind = EXCLUDED.linked_kind,
-          linked_id = EXCLUDED.linked_id
-        RETURNING id
+    const [row] = await sql<{ id: string }[]>`
+      INSERT INTO todo (text, status, kind, github_issue_number, linked_kind, linked_id, created_at)
+      VALUES (${text}, ${"open"}, ${"proposed"}, ${iss.number}, ${parent?.kind ?? null}, ${parent?.id ?? null}, ${iss.createdAt})
+      ON CONFLICT (github_issue_number) DO UPDATE SET
+        text = EXCLUDED.text,
+        kind = EXCLUDED.kind,
+        linked_kind = EXCLUDED.linked_kind,
+        linked_id = EXCLUDED.linked_id
+      RETURNING id
+    `;
+    count++;
+    if (parent) {
+      await sql`
+        INSERT INTO edge (from_kind, from_id, to_kind, to_id, type)
+        VALUES (${"todo"}, ${row.id}, ${parent.kind}, ${parent.id}, ${"derives_from"})
+        ON CONFLICT DO NOTHING
       `;
-      count++;
-      if (parent) {
-        await sql`
-          INSERT INTO edge (from_kind, from_id, to_kind, to_id, type)
-          VALUES (${"todo"}, ${row.id}, ${parent.kind}, ${parent.id}, ${"derives_from"})
-          ON CONFLICT DO NOTHING
-        `;
-        edgeCount++;
-      }
+      edgeCount++;
     }
   }
   console.log(`✅ ${count} todos · ${edgeCount} todo→parent edges`);
@@ -315,7 +312,7 @@ async function backfillTodosAndUntriaged() {
   try {
     await backfillClaims();
     await backfillExperiments();
-    await backfillTodosAndUntriaged();
+    await backfillTodos();
     console.log("\n🎉 backfill complete");
   } catch (e) {
     console.error("backfill failed:", e);

@@ -23,7 +23,8 @@ type Tab = "conversations" | "comments";
 type Props = {
   claimId: string;
   claimTitle: string;
-  canPost: boolean;
+  canChat: boolean;
+  canPostComments: boolean;
   currentUserEmail: string | null;
 };
 
@@ -36,7 +37,13 @@ function fmtRelative(d: string | null): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-export function ClaimDiscussion({ claimId, claimTitle, canPost, currentUserEmail }: Props) {
+export function ClaimDiscussion({
+  claimId,
+  claimTitle,
+  canChat,
+  canPostComments,
+  currentUserEmail,
+}: Props) {
   const [tab, setTab] = useState<Tab>("conversations");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [openSid, setOpenSid] = useState<string | null>(null);
@@ -116,7 +123,7 @@ export function ClaimDiscussion({ claimId, claimTitle, canPost, currentUserEmail
       </div>
 
       {tab === "comments" ? (
-        <CommentThread claimId={claimId} canPost={canPost} />
+        <CommentThread claimId={claimId} canPost={canPostComments} />
       ) : openSid ? (
         <div>
           <button
@@ -137,7 +144,7 @@ export function ClaimDiscussion({ claimId, claimTitle, canPost, currentUserEmail
         <ConversationsList
           loaded={loaded}
           sessions={sessions}
-          canPost={canPost}
+          canPost={canChat}
           creating={creating}
           onOpen={(sid) => setOpenSid(sid)}
           onNew={() => void startConversation()}
@@ -202,7 +209,9 @@ function ConversationsList({
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted">
-                    <span>{s.messageCount} message{s.messageCount === 1 ? "" : "s"}</span>
+                    <span>
+                      {s.messageCount ?? 0} message{(s.messageCount ?? 0) === 1 ? "" : "s"}
+                    </span>
                     {(s.lastUserEmail || s.createdByUserEmail) && (
                       <span>· last by {s.lastUserEmail ?? s.createdByUserEmail}</span>
                     )}

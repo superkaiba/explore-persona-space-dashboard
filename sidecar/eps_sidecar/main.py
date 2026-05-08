@@ -182,7 +182,8 @@ EPS Dashboard context (you are running on the project owner's VM):
 Dashboard URL:  https://dashboard.superkaiba.com
 Repo:           /home/thomasjiralerspong/explore-persona-space-dashboard
 DB schema:      <repo>/db/schema.ts (claim, experiment, run, todo, edge,
-                figure, comment, agent_task, chat_session, chat_message)
+                figure, comment, agent_task, agent_run, agent_run_event,
+                chat_session, chat_message)
 
 Postgres is reachable directly via psql with the env var
 $DASHBOARD_DATABASE_URL (already set). Examples:
@@ -206,6 +207,11 @@ $DASHBOARD_DATABASE_URL (already set). Examples:
   psql "$DASHBOARD_DATABASE_URL" -c \\
     "SELECT author_email, body, created_at FROM comment
       WHERE entity_kind='claim' AND entity_id='<claim-id>' ORDER BY created_at;"
+
+  # append progress to a dashboard improvement run
+  psql "$DASHBOARD_DATABASE_URL" -c \\
+    "INSERT INTO agent_run_event (run_id, event_type, body)
+     VALUES ('<run-id>', 'progress', 'Finished typecheck');"
 
 When the user asks about past conversations, comments, or activity that
 isn't visible in the current chat thread, use psql to query the dashboard
@@ -321,12 +327,30 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
 
 
+def _prompt_for_session(messages: list[ChatMessage], include_history: bool) -> str:
+    last_user = next((m for m in reversed(messages) if m.role == "user"), None)
+    if last_user is None:
+        raise HTTPException(400, "no user message")
+    if not include_history or len(messages) <= 1:
+        return last_user.content
+
+    prior = messages[:-1][-12:]
+    transcript = "\n\n".join(
+        f"{m.role.upper()}:\n{m.content}" for m in prior if m.content.strip()
+    )
+    return (
+        "Resume this saved EPS Dashboard Claude Code conversation. "
+        "Use the prior transcript for continuity, but answer the final user message.\n\n"
+        f"Prior transcript:\n{transcript}\n\n"
+        f"Final user message:\n{last_user.content}"
+    )
+
+
 @app.post("/chat", dependencies=[Depends(require_secret)])
 async def chat(req: ChatRequest) -> EventSourceResponse:
     last_user = next((m for m in reversed(req.messages) if m.role == "user"), None)
     if last_user is None:
         raise HTTPException(400, "no user message")
-    prompt = last_user.content
 
     # Use the caller's session_id verbatim if given (creating a new session
     # under that id if it doesn't exist yet); otherwise mint one.
@@ -353,6 +377,7 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
 
             async with session.lock:
                 session.last_active = _time.time()
+                prompt = _prompt_for_session(req.messages, include_history=is_new)
 
                 # Send the user message via stdin
                 assert session.proc.stdin is not None

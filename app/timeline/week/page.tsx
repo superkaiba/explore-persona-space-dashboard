@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { desc, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { claims, experiments, todos } from "@/db/schema";
 import { ActivityFeed, type FeedItem } from "@/components/timeline/ActivityFeed";
@@ -44,7 +44,7 @@ export default async function WeekPage() {
         createdAt: todos.createdAt,
       })
       .from(todos)
-      .where(gte(todos.createdAt, since))
+      .where(and(gte(todos.createdAt, since), eq(todos.kind, "proposed")))
       .orderBy(desc(todos.createdAt)),
   ]);
 
@@ -70,7 +70,7 @@ export default async function WeekPage() {
     })),
     ...todoRows.map((t): FeedItem => ({
       id: `todo-${t.id}`,
-      kind: t.kind === "untriaged" ? "untriaged" : "proposed",
+      kind: "proposed",
       title: t.text,
       githubIssueNumber: t.githubIssueNumber,
       timestamp: t.createdAt,

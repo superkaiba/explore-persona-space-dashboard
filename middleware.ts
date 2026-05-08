@@ -9,6 +9,7 @@ export const config = {
   matcher: [
     "/api/chat/:path*",
     "/api/chat-full/:path*",
+    "/api/agent-runs/:path*",
     "/api/write/:path*",
     "/api/lit/item-state",
     "/api/lit/item-question",

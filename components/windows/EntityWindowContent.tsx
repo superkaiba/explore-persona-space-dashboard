@@ -18,6 +18,8 @@ type EntityFull = {
   body: string;
   confidence?: Confidence;
   status?: string;
+  slug?: string;
+  url?: string | null;
   githubIssueNumber: number | null;
   hero: { url: string; caption: string | null } | null;
 };
@@ -29,18 +31,39 @@ const CONF_BADGE: Record<NonNullable<Confidence>, string> = {
 };
 
 const KIND_LABEL: Record<WindowKind, string> = {
+  project: "Project",
   claim: "Claim",
   experiment: "In progress",
-  proposed: "Proposed",
+  run: "Run",
+  proposed: "Task",
   untriaged: "Untriaged",
+  research_idea: "Research idea",
+  lit_item: "Literature",
 };
 
 const KIND_COLOR: Record<WindowKind, string> = {
+  project: "bg-fg",
   claim: "bg-confidence-low",
   experiment: "bg-running",
+  run: "bg-cyan-600",
   proposed: "bg-proposed",
   untriaged: "bg-untriaged",
+  research_idea: "bg-amber-500",
+  lit_item: "bg-emerald-600",
 };
+
+function statusBadgeClass(status: string | undefined): string {
+  if (!status) return "bg-subtle text-fg";
+  if (status === "planning") return "bg-sky-600 text-white";
+  if (status === "plan_pending") return "bg-amber-500 text-black";
+  if (status === "blocked") return "bg-red-600 text-white";
+  if (status === "awaiting_promotion") return "bg-fuchsia-600 text-white";
+  if (["running", "uploading", "implementing", "code_reviewing"].includes(status)) {
+    return "bg-blue-600 text-white";
+  }
+  if (["interpreting", "reviewing"].includes(status)) return "bg-cyan-600 text-white";
+  return "bg-slate-600 text-white";
+}
 
 export function EntityWindowContent({
   kind,
@@ -78,11 +101,26 @@ export function EntityWindowContent({
     return <div className="p-4 text-[12px] text-muted">Loading…</div>;
 
   const isClaim = entity.kind === "claim";
-  const fullPageHref = isClaim ? `/claim/${entity.id}` : null;
+  const fullPageHref = isClaim
+    ? `/claim/${entity.id}`
+    : entity.kind === "project"
+      ? `/projects/${entity.slug ?? entity.id}`
+      : entity.kind === "proposed" || entity.kind === "untriaged"
+      ? `/task/${entity.id}`
+      : entity.kind === "experiment"
+        ? `/experiment/${entity.id}`
+        : entity.kind === "run"
+          ? `/run/${entity.id}`
+          : entity.kind === "research_idea"
+          ? `/lit/ideas/${entity.slug ?? entity.id}`
+          : entity.kind === "lit_item"
+            ? `/lit/items/${entity.id}`
+            : null;
   const ghHref =
     entity.githubIssueNumber != null
       ? `https://github.com/superkaiba/explore-persona-space/issues/${entity.githubIssueNumber}`
       : null;
+  const sourceHref = entity.kind === "lit_item" ? entity.url : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -99,8 +137,17 @@ export function EntityWindowContent({
               {entity.confidence}
             </span>
           )}
-          {entity.kind === "experiment" && entity.status && (
-            <span className="rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal text-running">
+          {(entity.kind === "experiment" ||
+            entity.kind === "project" ||
+            entity.kind === "run" ||
+            entity.kind === "proposed" ||
+            entity.kind === "untriaged" ||
+            entity.kind === "research_idea" ||
+            entity.kind === "lit_item") &&
+            entity.status && (
+            <span
+              className={`rounded px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal ${statusBadgeClass(entity.status)}`}
+            >
               {entity.status.replace(/_/g, " ")}
             </span>
           )}
@@ -113,6 +160,17 @@ export function EntityWindowContent({
                 className="inline-flex items-center gap-1 font-mono normal-case tracking-normal text-muted hover:text-fg"
               >
                 #{entity.githubIssueNumber}
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            )}
+            {sourceHref && (
+              <a
+                href={sourceHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-mono normal-case tracking-normal text-muted hover:text-fg"
+              >
+                source
                 <ExternalLink className="h-2.5 w-2.5" />
               </a>
             )}
