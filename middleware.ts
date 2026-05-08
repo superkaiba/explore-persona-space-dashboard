@@ -11,6 +11,7 @@ export const config = {
     "/api/chat-full/:path*",
     "/api/write/:path*",
     "/api/lit/item-state",
+    "/api/lit/item-question",
     "/api/lit/link/:path*",
     "/api/lit/idea/:path*",
   ],

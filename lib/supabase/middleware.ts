@@ -11,6 +11,7 @@ const PROTECTED_PREFIXES = [
   "/api/chat-full",
   "/api/write",
   "/api/lit/item-state",
+  "/api/lit/item-question",
   "/api/lit/link",
   "/api/lit/idea",
 ];

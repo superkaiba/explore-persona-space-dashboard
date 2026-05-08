@@ -464,6 +464,75 @@ export const litItemStates = pgTable(
   }),
 );
 
+export const litItemDocuments = pgTable(
+  "lit_item_document",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    externalId: text("external_id").notNull(),
+    itemId: uuid("item_id")
+      .references(() => litItems.id, { onDelete: "cascade" })
+      .notNull(),
+    sourceUrl: text("source_url"),
+    contentType: text("content_type"),
+    status: text("status").notNull().default("fetched"),
+    textMd: text("text_md"),
+    textPlain: text("text_plain"),
+    textSha256: text("text_sha256"),
+    error: text("error"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    externalUnique: uniqueIndex("lit_item_document_external_id_unique").on(t.externalId),
+    itemIdx: index("lit_item_document_item_idx").on(t.itemId, t.updatedAt),
+  }),
+);
+
+export const litItemDocumentChunks = pgTable(
+  "lit_item_document_chunk",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .references(() => litItemDocuments.id, { onDelete: "cascade" })
+      .notNull(),
+    itemId: uuid("item_id")
+      .references(() => litItems.id, { onDelete: "cascade" })
+      .notNull(),
+    chunkIndex: integer("chunk_index").notNull(),
+    text: text("text").notNull(),
+    metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    documentChunkUnique: uniqueIndex("lit_item_document_chunk_unique").on(
+      t.documentId,
+      t.chunkIndex,
+    ),
+    itemIdx: index("lit_item_document_chunk_item_idx").on(t.itemId, t.chunkIndex),
+  }),
+);
+
+export const litItemQuestions = pgTable(
+  "lit_item_question",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemId: uuid("item_id")
+      .references(() => litItems.id, { onDelete: "cascade" })
+      .notNull(),
+    question: text("question").notNull(),
+    answerMd: text("answer_md"),
+    citationsJson: jsonb("citations_json").$type<Array<Record<string, unknown>>>(),
+    userId: uuid("user_id"),
+    userEmail: text("user_email"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    itemIdx: index("lit_item_question_item_idx").on(t.itemId, t.createdAt),
+    userIdx: index("lit_item_question_user_idx").on(t.userId, t.createdAt),
+  }),
+);
+
 export type Claim = typeof claims.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
 export type Experiment = typeof experiments.$inferSelect;
@@ -485,3 +554,6 @@ export type LitIdeaLink = typeof litIdeaLinks.$inferSelect;
 export type ResearchIdeaEvent = typeof researchIdeaEvents.$inferSelect;
 export type LitDigestRun = typeof litDigestRuns.$inferSelect;
 export type LitItemState = typeof litItemStates.$inferSelect;
+export type LitItemDocument = typeof litItemDocuments.$inferSelect;
+export type LitItemDocumentChunk = typeof litItemDocumentChunks.$inferSelect;
+export type LitItemQuestion = typeof litItemQuestions.$inferSelect;

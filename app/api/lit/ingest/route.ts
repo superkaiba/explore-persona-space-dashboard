@@ -5,7 +5,10 @@ import { getDb } from "@/db/client";
 import {
   litDigestRuns,
   litIdeaLinks,
+  litItemDocumentChunks,
+  litItemDocuments,
   litItemAnalyses,
+  litItemQuestions,
   litItemStates,
   litItems,
   researchIdeaEvents,
@@ -117,6 +120,38 @@ const StatePayload = z.object({
   readAt: z.string().trim().optional().nullable(),
 });
 
+const DocumentPayload = z.object({
+  externalId: z.string().trim().min(1).max(500),
+  itemExternalId: z.string().trim().min(1).max(500),
+  sourceUrl: z.string().trim().max(5000).optional().nullable(),
+  contentType: z.string().trim().max(500).optional().nullable(),
+  status: z.string().trim().max(100).default("fetched"),
+  textMd: nullableText,
+  textPlain: nullableText,
+  textSha256: z.string().trim().max(500).optional().nullable(),
+  error: nullableText,
+  fetchedAt: z.string().trim().optional().nullable(),
+  chunkCount: z.number().int().nonnegative().optional().nullable(),
+});
+
+const ChunkPayload = z.object({
+  documentExternalId: z.string().trim().min(1).max(500),
+  itemExternalId: z.string().trim().min(1).max(500),
+  chunkIndex: z.number().int().nonnegative(),
+  text: z.string().trim().min(1).max(50000),
+  metadata: z.record(z.unknown()).optional().nullable(),
+});
+
+const QuestionPayload = z.object({
+  itemExternalId: z.string().trim().min(1).max(500),
+  question: z.string().trim().min(1).max(20000),
+  answerMd: nullableText,
+  citations: z.array(z.record(z.unknown())).max(100).optional().nullable(),
+  userId: z.string().uuid().optional().nullable(),
+  userEmail: z.string().trim().max(500).optional().nullable(),
+  createdAt: z.string().trim().optional().nullable(),
+});
+
 const IngestPayload = z.object({
   items: z.array(ItemPayload).max(1000).default([]),
   analyses: z.array(AnalysisPayload).max(1000).default([]),
@@ -125,6 +160,9 @@ const IngestPayload = z.object({
   runs: z.array(RunPayload).max(200).default([]),
   events: z.array(EventPayload).max(2000).default([]),
   states: z.array(StatePayload).max(2000).default([]),
+  documents: z.array(DocumentPayload).max(200).default([]),
+  chunks: z.array(ChunkPayload).max(2000).default([]),
+  questions: z.array(QuestionPayload).max(500).default([]),
 });
 
 function asDate(value: string | null | undefined): Date | null {
@@ -159,6 +197,7 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   const itemExternalToId = new Map<string, string>();
   const ideaKeyToId = new Map<string, string>();
+  const documentExternalToId = new Map<string, string>();
 
   const excluded = (column: string) => sql.raw(`excluded.${column}`);
   const chunk = <T,>(values: T[], size = 500) => {
@@ -228,6 +267,17 @@ export async function POST(req: NextRequest) {
         ideaKeyToId.set(row.externalId, row.id);
         ideaKeyToId.set(row.slug, row.id);
       }
+    }
+  };
+
+  const loadDocumentIds = async (externalIds: Iterable<string | null | undefined>) => {
+    const missing = uniqueTexts(externalIds).filter((id) => !documentExternalToId.has(id));
+    for (const batch of chunk(missing)) {
+      const rows = await db
+        .select({ id: litItemDocuments.id, externalId: litItemDocuments.externalId })
+        .from(litItemDocuments)
+        .where(inArray(litItemDocuments.externalId, batch));
+      for (const row of rows) documentExternalToId.set(row.externalId, row.id);
     }
   };
 
@@ -544,6 +594,123 @@ export async function POST(req: NextRequest) {
       });
   }
 
+  let skippedDocuments = 0;
+  await loadItemIds(parsed.documents.map((document) => document.itemExternalId));
+  const documentRowsByExternalId = new Map<string, typeof litItemDocuments.$inferInsert>();
+  const documentChunkCounts = new Map<string, number>();
+  for (const document of parsed.documents) {
+    const itemId = itemExternalToId.get(document.itemExternalId);
+    if (!itemId) {
+      skippedDocuments += 1;
+      continue;
+    }
+    documentRowsByExternalId.set(document.externalId, {
+      externalId: document.externalId,
+      itemId,
+      sourceUrl: document.sourceUrl ?? null,
+      contentType: document.contentType ?? null,
+      status: document.status,
+      textMd: document.textMd ?? null,
+      textPlain: document.textPlain ?? null,
+      textSha256: document.textSha256 ?? null,
+      error: document.error ?? null,
+      fetchedAt: asDate(document.fetchedAt),
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (document.chunkCount != null) documentChunkCounts.set(document.externalId, document.chunkCount);
+  }
+  const documentRows = Array.from(documentRowsByExternalId.values());
+  if (documentRows.length > 0) {
+    const rows = await db
+      .insert(litItemDocuments)
+      .values(documentRows)
+      .onConflictDoUpdate({
+        target: litItemDocuments.externalId,
+        set: {
+          itemId: excluded("item_id"),
+          sourceUrl: excluded("source_url"),
+          contentType: excluded("content_type"),
+          status: excluded("status"),
+          textMd: excluded("text_md"),
+          textPlain: excluded("text_plain"),
+          textSha256: excluded("text_sha256"),
+          error: excluded("error"),
+          fetchedAt: excluded("fetched_at"),
+          updatedAt: excluded("updated_at"),
+        },
+      })
+      .returning({ id: litItemDocuments.id, externalId: litItemDocuments.externalId });
+    for (const row of rows) documentExternalToId.set(row.externalId, row.id);
+
+    for (const [externalId, chunkCount] of documentChunkCounts) {
+      const documentId = documentExternalToId.get(externalId);
+      if (!documentId) continue;
+      await db
+        .delete(litItemDocumentChunks)
+        .where(sql`${litItemDocumentChunks.documentId} = ${documentId} and ${litItemDocumentChunks.chunkIndex} >= ${chunkCount}`);
+    }
+  }
+
+  let skippedChunks = 0;
+  await loadDocumentIds(parsed.chunks.map((chunk) => chunk.documentExternalId));
+  await loadItemIds(parsed.chunks.map((chunk) => chunk.itemExternalId));
+  const chunkRowsByKey = new Map<string, typeof litItemDocumentChunks.$inferInsert>();
+  for (const docChunk of parsed.chunks) {
+    const documentId = documentExternalToId.get(docChunk.documentExternalId);
+    const itemId = itemExternalToId.get(docChunk.itemExternalId);
+    if (!documentId || !itemId) {
+      skippedChunks += 1;
+      continue;
+    }
+    chunkRowsByKey.set(`${documentId}:${docChunk.chunkIndex}`, {
+      documentId,
+      itemId,
+      chunkIndex: docChunk.chunkIndex,
+      text: docChunk.text,
+      metadataJson: docChunk.metadata ?? null,
+      createdAt: now,
+    });
+  }
+  const chunkRows = Array.from(chunkRowsByKey.values());
+  if (chunkRows.length > 0) {
+    await db
+      .insert(litItemDocumentChunks)
+      .values(chunkRows)
+      .onConflictDoUpdate({
+        target: [litItemDocumentChunks.documentId, litItemDocumentChunks.chunkIndex],
+        set: {
+          itemId: excluded("item_id"),
+          text: excluded("text"),
+          metadataJson: excluded("metadata_json"),
+          createdAt: excluded("created_at"),
+        },
+      });
+  }
+
+  let skippedQuestions = 0;
+  await loadItemIds(parsed.questions.map((question) => question.itemExternalId));
+  const questionRows: (typeof litItemQuestions.$inferInsert)[] = [];
+  for (const question of parsed.questions) {
+    const itemId = itemExternalToId.get(question.itemExternalId);
+    if (!itemId) {
+      skippedQuestions += 1;
+      continue;
+    }
+    questionRows.push({
+      itemId,
+      question: question.question,
+      answerMd: question.answerMd ?? null,
+      citationsJson: question.citations ?? null,
+      userId: question.userId ?? null,
+      userEmail: question.userEmail ?? null,
+      createdAt: asDate(question.createdAt) ?? now,
+    });
+  }
+  if (questionRows.length > 0) {
+    await db.insert(litItemQuestions).values(questionRows);
+  }
+
   if (parsed.events.length === 0 && parsed.links.length > 0) {
     const ideaIds = Array.from(new Set(Array.from(ideaKeyToId.values())));
     for (const ideaId of ideaIds.slice(0, 50)) {
@@ -567,10 +734,16 @@ export async function POST(req: NextRequest) {
       runs: parsed.runs.length,
       events: parsed.events.length,
       states: parsed.states.length,
+      documents: parsed.documents.length,
+      chunks: parsed.chunks.length,
+      questions: parsed.questions.length,
       skippedAnalyses,
       skippedLinks,
       skippedEvents,
       skippedStates,
+      skippedDocuments,
+      skippedChunks,
+      skippedQuestions,
     },
   });
 }

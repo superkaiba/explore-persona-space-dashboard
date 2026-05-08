@@ -7,12 +7,15 @@ import { ExternalLink } from "lucide-react";
 import { getDb } from "@/db/client";
 import {
   litIdeaLinks,
+  litItemDocuments,
   litItemAnalyses,
+  litItemQuestions,
   litItemStates,
   litItems,
   researchIdeas,
 } from "@/db/schema";
 import { ItemStateForm } from "@/components/lit/ItemStateForm";
+import { ItemQuestionForm } from "@/components/lit/ItemQuestionForm";
 import { LinkReviewControls } from "@/components/lit/LinkReviewControls";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -80,7 +83,27 @@ export default async function LitItemPage({
         .limit(1)
     : [];
 
+  const documents = user
+    ? await db
+        .select()
+        .from(litItemDocuments)
+        .where(eq(litItemDocuments.itemId, id))
+        .orderBy(desc(litItemDocuments.fetchedAt), desc(litItemDocuments.updatedAt))
+        .limit(3)
+    : [];
+
+  const questions = user
+    ? await db
+        .select()
+        .from(litItemQuestions)
+        .where(and(eq(litItemQuestions.itemId, id), eq(litItemQuestions.userId, user.id)))
+        .orderBy(desc(litItemQuestions.createdAt))
+        .limit(20)
+    : [];
+
   const primaryAnalysis = analyses[0];
+  const readableDocuments = documents.filter((document) => document.textMd || document.textPlain);
+  const hasFullText = readableDocuments.length > 0;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -162,6 +185,29 @@ export default async function LitItemPage({
                 </div>
               </section>
             )}
+
+            {user && readableDocuments.length > 0 && (
+              <section>
+                <h2 className="mb-2 text-[12px] font-semibold tracking-tight">Extracted text</h2>
+                <div className="flex flex-col gap-2">
+                  {readableDocuments.map((document) => (
+                    <details
+                      key={document.id}
+                      className="rounded-md border border-border bg-panel p-4"
+                    >
+                      <summary className="cursor-pointer text-[12px] font-medium">
+                        {document.contentType ?? "document"} · {formatLitDate(document.fetchedAt)}
+                      </summary>
+                      <div className="prose prose-sm prose-tight mt-3 max-h-[560px] max-w-none overflow-y-auto pr-3 dark:prose-invert">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {(document.textMd ?? document.textPlain ?? "").slice(0, 150000)}
+                        </ReactMarkdown>
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </section>
+            )}
           </main>
 
           <aside className="flex flex-col gap-4">
@@ -171,6 +217,19 @@ export default async function LitItemPage({
                 initialReadStatus={(state?.readStatus ?? "unread") as LitReadStatus}
                 initialNotes={state?.notes ?? ""}
                 initialArchived={state?.archived ?? false}
+              />
+            )}
+
+            {user && (
+              <ItemQuestionForm
+                itemId={item.id}
+                initialQuestions={questions.map((question) => ({
+                  id: question.id,
+                  question: question.question,
+                  answerMd: question.answerMd,
+                  createdAt: question.createdAt,
+                }))}
+                hasFullText={hasFullText}
               />
             )}
 

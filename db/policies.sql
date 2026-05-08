@@ -26,6 +26,9 @@ ALTER TABLE lit_idea_link  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE research_idea_event ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lit_digest_run ENABLE ROW LEVEL SECURITY;
 ALTER TABLE lit_item_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lit_item_document ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lit_item_document_chunk ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lit_item_question ENABLE ROW LEVEL SECURITY;
 
 -- ── public-readable entity tables ─────────────────────────────────────────
 DO $$
@@ -143,4 +146,16 @@ CREATE POLICY auth_only_research_idea_clarification ON research_idea_clarificati
 
 DROP POLICY IF EXISTS auth_only_lit_item_state ON lit_item_state;
 CREATE POLICY auth_only_lit_item_state ON lit_item_state
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS auth_only_lit_item_document ON lit_item_document;
+CREATE POLICY auth_only_lit_item_document ON lit_item_document
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS auth_only_lit_item_document_chunk ON lit_item_document_chunk;
+CREATE POLICY auth_only_lit_item_document_chunk ON lit_item_document_chunk
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS auth_only_lit_item_question ON lit_item_question;
+CREATE POLICY auth_only_lit_item_question ON lit_item_question
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
