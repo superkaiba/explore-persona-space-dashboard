@@ -9,7 +9,10 @@ import {
   groupResultsByDay,
   resultCounts,
 } from "@/lib/update-results";
-import { ClaudeAskButton, MentorClaudePanel } from "@/components/updates/MentorClaudePanel";
+import {
+  ClaudeAskComposer,
+  MentorClaudePanel,
+} from "@/components/updates/MentorClaudePanel";
 import {
   InteractiveResultCard,
   InteractiveResultRow,
@@ -58,14 +61,6 @@ export function DailyCleanResultsUpdate({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <ClaudeAskButton
-              payload={{
-                scopeTitle: `Daily update - ${formatDay(selectedDate)}`,
-                contextMd: context,
-                suggestedQuestion: "What should I take away from today's results?",
-              }}
-              label="Ask Claude"
-            />
             <Link
               href={internal ? `${weekPath}?internal=1` : weekPath}
               className="rounded-md border border-border bg-panel px-3 py-1.5 text-[12px] text-muted hover:bg-subtle hover:text-fg"
@@ -82,6 +77,16 @@ export function DailyCleanResultsUpdate({
             )}
           </div>
         </header>
+
+        <ClaudeAskComposer
+          payload={{
+            scopeTitle: `Daily update - ${formatDay(selectedDate)}`,
+            contextMd: context,
+            suggestedQuestion: "What should I take away from today's results?",
+          }}
+          placeholder="Ask Claude Code to inspect today's results..."
+          className="mb-5"
+        />
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px]">
           <main className="min-w-0">
@@ -160,14 +165,6 @@ export function WeeklyCleanResultsUpdate({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <ClaudeAskButton
-              payload={{
-                scopeTitle: "Weekly update",
-                contextMd: context,
-                suggestedQuestion: "What are the main takeaways from this week's results?",
-              }}
-              label="Ask Claude"
-            />
             <Link
               href={internal ? `${dayPath}?internal=1` : dayPath}
               className="rounded-md border border-border bg-panel px-3 py-1.5 text-[12px] text-muted hover:bg-subtle hover:text-fg"
@@ -176,6 +173,16 @@ export function WeeklyCleanResultsUpdate({
             </Link>
           </div>
         </header>
+
+        <ClaudeAskComposer
+          payload={{
+            scopeTitle: "Weekly update",
+            contextMd: context,
+            suggestedQuestion: "What are the main takeaways from this week's results?",
+          }}
+          placeholder="Ask Claude Code to inspect this week's results..."
+          className="mb-4"
+        />
 
         <div className="mb-4 grid grid-cols-3 gap-2 text-[12px]">
           <Summary value={counts.total} label="results" />
@@ -481,10 +488,14 @@ function dailyContext(date: Date, results: CleanResult[]) {
   const lines = results.map((result, index) => {
     return [
       `${index + 1}. ${result.title}`,
+      `   Claim ID: ${result.id}`,
+      result.githubIssueNumber == null
+        ? null
+        : `   GitHub issue: https://github.com/superkaiba/explore-persona-space/issues/${result.githubIssueNumber}`,
       `   Classification: ${result.useful ? "useful" : "not useful"}`,
       `   Confidence: ${result.confidence ?? "not set"}`,
       result.excerpt ? `   Excerpt: ${result.excerpt}` : null,
-      `   URL: ${result.href}`,
+      `   Dashboard URL: https://dashboard.superkaiba.com${result.href}`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -496,6 +507,16 @@ function weeklyContext(start: Date, end: Date, results: CleanResult[]) {
   return [
     `Weekly update from ${formatShortDate(start)} to ${formatShortDate(end)}.`,
     "",
-    ...results.map((result, index) => `${index + 1}. ${result.title} (${dayKey(result.updatedAt)})`),
+    ...results.map((result, index) =>
+      [
+        `${index + 1}. ${result.title} (${dayKey(result.updatedAt)})`,
+        `   Claim ID: ${result.id}`,
+        result.githubIssueNumber == null
+          ? null
+          : `   GitHub issue: https://github.com/superkaiba/explore-persona-space/issues/${result.githubIssueNumber}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    ),
   ].join("\n");
 }
