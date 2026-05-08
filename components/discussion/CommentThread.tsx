@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Loader2, MessageSquare, Quote, Reply, Send } from "lucide-react";
+import { Bot, Loader2, MessageSquare, Reply, Send, Trash2 } from "lucide-react";
 import {
   buildCommentTree,
   type ParsedComment,
@@ -17,6 +17,7 @@ type Props = {
   canPost: boolean;
   publicPost?: boolean;
   canAskClaude?: boolean;
+  refreshKey?: number;
 };
 
 function fmt(d: string): string {
@@ -35,6 +36,7 @@ export function CommentThread({
   canPost,
   publicPost = false,
   canAskClaude = false,
+  refreshKey = 0,
 }: Props) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [draft, setDraft] = useState("");
@@ -75,12 +77,7 @@ export function CommentThread({
     return () => {
       cancelled = true;
     };
-  }, [claimId]);
-
-  function useSelection() {
-    const selected = window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "";
-    if (selected) setAnchorText(selected.slice(0, 2000));
-  }
+  }, [claimId, refreshKey]);
 
   async function postComment({
     text,
@@ -141,6 +138,35 @@ export function CommentThread({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setPosting(false);
+    }
+  }
+
+  async function deleteComment(comment: ParsedComment) {
+    const replyCount = countReplies(comment);
+    const confirmed = window.confirm(
+      replyCount > 0
+        ? `Delete this comment and ${replyCount} ${replyCount === 1 ? "reply" : "replies"}?`
+        : "Delete this comment?",
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    try {
+      const url = publicPost
+        ? `/api/mentor/claim/${claimId}/comments`
+        : `/api/claim/${claimId}/comments`;
+      const r = await fetch(url, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentId: comment.id }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const json = (await r.json()) as { deletedIds: string[] };
+      const deletedIds = new Set(json.deletedIds);
+      setComments((current) => current.filter((item) => !deletedIds.has(item.id)));
+      if (replyTo?.id && deletedIds.has(replyTo.id)) setReplyTo(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -218,20 +244,11 @@ export function CommentThread({
   return (
     <div className="flex flex-col gap-3">
       {canPost && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <div className="inline-flex items-center gap-1.5 text-[12px] font-medium text-fg">
             <MessageSquare className="h-3.5 w-3.5 text-muted" />
             Add comment
           </div>
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={useSelection}
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-subtle px-2 py-1 text-[11px] text-muted hover:bg-raised hover:text-fg"
-          >
-            <Quote className="h-3.5 w-3.5" />
-            Target selection
-          </button>
         </div>
       )}
 
@@ -341,6 +358,7 @@ export function CommentThread({
               claudePendingId={claudePendingId}
               onReply={setReplyTo}
               onAskClaude={(target) => void answerWithClaude(target)}
+              onDelete={(target) => void deleteComment(target)}
             />
           ))}
         </ul>
@@ -356,6 +374,7 @@ function CommentItem({
   claudePendingId,
   onReply,
   onAskClaude,
+  onDelete,
 }: {
   comment: ParsedComment;
   canPost: boolean;
@@ -363,6 +382,7 @@ function CommentItem({
   claudePendingId: string | null;
   onReply: (comment: ParsedComment) => void;
   onAskClaude: (comment: ParsedComment) => void;
+  onDelete: (comment: ParsedComment) => void;
 }) {
   const claudePending = claudePendingId === comment.id;
   return (
@@ -405,6 +425,16 @@ function CommentItem({
             Ask Claude Code
           </button>
         )}
+        {canPost && (
+          <button
+            type="button"
+            onClick={() => onDelete(comment)}
+            className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-confidence-low"
+          >
+            <Trash2 className="h-3 w-3" />
+            Delete
+          </button>
+        )}
       </div>
       {comment.replies.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2 border-l border-border pl-3">
@@ -417,12 +447,17 @@ function CommentItem({
               claudePendingId={claudePendingId}
               onReply={onReply}
               onAskClaude={onAskClaude}
+              onDelete={onDelete}
             />
           ))}
         </ul>
       )}
     </li>
   );
+}
+
+function countReplies(comment: ParsedComment): number {
+  return comment.replies.reduce((count, reply) => count + 1 + countReplies(reply), 0);
 }
 
 function parseSseEvent(eventText: string) {

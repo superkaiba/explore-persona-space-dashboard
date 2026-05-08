@@ -14,8 +14,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
+  Loader2,
   Maximize2,
   MessageSquare,
+  Send,
   X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -186,6 +188,16 @@ function ResultDetailOverlay({
   const canComment = isUuid(result.id);
   const headings = useMemo(() => extractMarkdownHeadings(markdown), [markdown]);
   const headingRenderCounts = new Map<string, number>();
+  const [selectionComment, setSelectionComment] = useState<SelectionCommentTarget | null>(null);
+  const [quickCommentDraft, setQuickCommentDraft] = useState("");
+  const [quickCommentAuthor, setQuickCommentAuthor] = useState("");
+  const [quickCommentPosting, setQuickCommentPosting] = useState(false);
+  const [quickCommentError, setQuickCommentError] = useState<string | null>(null);
+  const [commentsRefreshKey, setCommentsRefreshKey] = useState(0);
+
+  useEffect(() => {
+    setQuickCommentAuthor(window.localStorage.getItem("eps-mentor-comment-author") ?? "");
+  }, []);
 
   function scrollContentToId(id: string) {
     const container = contentRef.current;
@@ -215,6 +227,66 @@ function ResultDetailOverlay({
     if (!href?.startsWith("#")) return;
     event.preventDefault();
     scrollContentToId(href.slice(1));
+  }
+
+  function captureSelectionForComment() {
+    if (!canComment || !contentRef.current) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    const anchorNode = selection.anchorNode;
+    const focusNode = selection.focusNode;
+    if (
+      !anchorNode ||
+      !focusNode ||
+      !contentRef.current.contains(anchorNode) ||
+      !contentRef.current.contains(focusNode)
+    ) {
+      return;
+    }
+
+    const text = selection.toString().replace(/\s+/g, " ").trim();
+    if (!text) return;
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const fallback = range.getClientRects()[0];
+    const targetRect = rect.width > 0 || rect.height > 0 ? rect : fallback;
+    if (!targetRect) return;
+
+    setQuickCommentDraft("");
+    setQuickCommentError(null);
+    setSelectionComment({
+      text: text.slice(0, 2000),
+      left: clamp(targetRect.left + targetRect.width / 2 - 180, 12, window.innerWidth - 372),
+      top: clamp(targetRect.bottom + 10, 12, window.innerHeight - 260),
+    });
+  }
+
+  async function postQuickComment() {
+    if (!selectionComment || !quickCommentDraft.trim() || quickCommentPosting) return;
+    setQuickCommentPosting(true);
+    setQuickCommentError(null);
+    try {
+      window.localStorage.setItem("eps-mentor-comment-author", quickCommentAuthor.trim());
+      const response = await fetch(`/api/mentor/claim/${result.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          author: quickCommentAuthor.trim() || undefined,
+          body: quickCommentDraft.trim(),
+          anchorText: selectionComment.text,
+          website: "",
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      setSelectionComment(null);
+      setQuickCommentDraft("");
+      setCommentsRefreshKey((value) => value + 1);
+      window.getSelection()?.removeAllRanges();
+    } catch (err) {
+      setQuickCommentError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setQuickCommentPosting(false);
+    }
   }
 
   useEffect(() => {
@@ -323,7 +395,12 @@ function ResultDetailOverlay({
                 )}
               </nav>
             </aside>
-            <div ref={contentRef} className="min-h-0 px-4 py-4 lg:overflow-y-auto">
+            <div
+              ref={contentRef}
+              onMouseUp={captureSelectionForComment}
+              onKeyUp={captureSelectionForComment}
+              className="min-h-0 px-4 py-4 lg:overflow-y-auto"
+            >
               <ClaudeAskComposer
                 payload={askPayload}
                 placeholder="Ask Claude Code to inspect this result..."
@@ -371,11 +448,26 @@ function ResultDetailOverlay({
                   canPost
                   publicPost
                   canAskClaude
+                  refreshKey={commentsRefreshKey}
                 />
               </section>
             )}
           </div>
         </div>
+
+        {selectionComment && (
+          <SelectionCommentPopover
+            target={selectionComment}
+            author={quickCommentAuthor}
+            draft={quickCommentDraft}
+            error={quickCommentError}
+            posting={quickCommentPosting}
+            onAuthorChange={setQuickCommentAuthor}
+            onDraftChange={setQuickCommentDraft}
+            onSubmit={() => void postQuickComment()}
+            onClose={() => setSelectionComment(null)}
+          />
+        )}
 
         {internal && (
           <footer className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3 text-[12px] text-muted">
@@ -416,6 +508,100 @@ function ResultBadge({ result, compact = false }: { result: CleanResult; compact
       <Icon className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
       {result.useful ? "Useful" : "Not useful"}
     </span>
+  );
+}
+
+type SelectionCommentTarget = {
+  text: string;
+  left: number;
+  top: number;
+};
+
+function SelectionCommentPopover({
+  target,
+  author,
+  draft,
+  error,
+  posting,
+  onAuthorChange,
+  onDraftChange,
+  onSubmit,
+  onClose,
+}: {
+  target: SelectionCommentTarget;
+  author: string;
+  draft: string;
+  error: string | null;
+  posting: boolean;
+  onAuthorChange: (value: string) => void;
+  onDraftChange: (value: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+      className="fixed z-50 rounded-lg border border-border bg-panel p-3 shadow-rail"
+      style={{ left: target.left, top: target.top, width: "min(360px, calc(100vw - 24px))" }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="mb-2 flex items-start gap-2">
+        <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-semibold text-fg">Comment on selection</div>
+          <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-muted">
+            {target.text}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md p-1 text-muted hover:bg-subtle hover:text-fg"
+          aria-label="Close comment popup"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <input
+        value={author}
+        onChange={(event) => onAuthorChange(event.target.value)}
+        placeholder="Name"
+        className="mb-2 w-full rounded-md border border-border bg-canvas px-2.5 py-1.5 text-[12px] text-fg placeholder:text-muted focus:border-running focus:outline-none focus:ring-1 focus:ring-running"
+      />
+      <div className="flex items-end gap-2">
+        <textarea
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              onSubmit();
+            }
+          }}
+          rows={3}
+          autoFocus
+          placeholder="Add a comment..."
+          disabled={posting}
+          className="min-h-[74px] flex-1 resize-none rounded-md border border-border bg-canvas px-2.5 py-1.5 text-[13px] leading-relaxed text-fg placeholder:text-muted focus:border-running focus:outline-none focus:ring-1 focus:ring-running disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          disabled={posting || !draft.trim()}
+          className="grid h-9 w-9 place-items-center rounded-md bg-fg text-canvas transition-opacity disabled:opacity-35"
+          aria-label="Post selection comment"
+        >
+          {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </button>
+      </div>
+      {error && (
+        <p className="mt-2 rounded-md border border-confidence-low/30 bg-confidence-low/10 p-2 text-[11px] text-muted">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 
@@ -550,6 +736,11 @@ function decodeFragment(value: string) {
   } catch {
     return value;
   }
+}
+
+function clamp(value: number, min: number, max: number) {
+  const upper = Math.max(min, max);
+  return Math.min(Math.max(value, min), upper);
 }
 
 function resultContext(result: CleanResult) {

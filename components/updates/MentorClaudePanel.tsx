@@ -723,8 +723,28 @@ export function MentorClaudePanel({
     );
   }
 
+  function reopenMostRecentWindow() {
+    setWindows((current) => {
+      if (current.length === 0) return current;
+      const latest = mostRecentWindow(current);
+      return current.map((win) =>
+        win.key === latest.key ? { ...win, open: true, updatedAt: Date.now() } : win,
+      );
+    });
+  }
+
   const openWindows = windows.filter((win) => win.open);
-  if (!mounted || openWindows.length === 0) return null;
+  if (!mounted) return null;
+  if (openWindows.length === 0) {
+    if (windows.length === 0) return null;
+    return (
+      <ClaudeDockTab
+        windowCount={windows.length}
+        tabCount={flattenChatTabs(windows).length}
+        onOpen={reopenMostRecentWindow}
+      />
+    );
+  }
   const activeWindow = mostRecentWindow(openWindows);
   const activeTab = activeWindow?.tabs.find((tab) => tab.id === activeWindow.activeTabId) ?? activeWindow?.tabs[0] ?? null;
   if (!activeWindow || !activeTab) return null;
@@ -735,7 +755,7 @@ export function MentorClaudePanel({
         windows={openWindows}
         activeWindow={activeWindow}
         activeTab={activeTab}
-        style={unifiedChatBoxStyle(viewport)}
+        style={dockedChatBoxStyle(viewport)}
         onClose={closeAllWindows}
         onNewTab={() => newTab(activeWindow.key)}
         onCloseTab={(windowKey, tabId) => closeTab(windowKey, tabId)}
@@ -747,6 +767,32 @@ export function MentorClaudePanel({
         }}
       />
     </div>
+  );
+}
+
+function ClaudeDockTab({
+  windowCount,
+  tabCount,
+  onOpen,
+}: {
+  windowCount: number;
+  tabCount: number;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="fixed right-3 top-24 z-50 flex items-center gap-2 rounded-l-lg border border-r-0 border-border bg-panel px-3 py-2 text-left text-[12px] text-fg shadow-rail transition-colors hover:bg-raised"
+      aria-label="Open Claude Code chat"
+    >
+      <MessageCircle className="h-4 w-4 text-muted" />
+      <span className="font-medium">Claude Code</span>
+      <span className="font-mono text-[10px] text-muted">
+        {tabCount} {tabCount === 1 ? "tab" : "tabs"}
+        {windowCount > 1 ? `/${windowCount}` : ""}
+      </span>
+    </button>
   );
 }
 
@@ -788,7 +834,7 @@ function ClaudeChatWindow({
   return (
     <>
       <aside
-        className="pointer-events-auto fixed z-10 flex flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-rail"
+        className="pointer-events-auto fixed z-10 flex flex-col overflow-hidden rounded-lg border border-border bg-panel shadow-rail md:rounded-r-none"
         style={style}
       >
         <header className="flex items-start gap-3 border-b border-border bg-panel px-4 py-3">
@@ -1058,7 +1104,7 @@ function makeTab(index: number, draft: string): ChatTab {
   };
 }
 
-function unifiedChatBoxStyle(viewport: { width: number; height: number }): CSSProperties {
+function dockedChatBoxStyle(viewport: { width: number; height: number }): CSSProperties {
   if (viewport.width < 768) {
     return {
       left: 12,
@@ -1068,12 +1114,12 @@ function unifiedChatBoxStyle(viewport: { width: number; height: number }): CSSPr
     };
   }
 
-  const width = 580;
-  const height = Math.min(680, viewport.height - 32);
-  const left = clamp(viewport.width - width - 16, 12, viewport.width - width - 12);
-  const top = clamp(viewport.height - height - 16, 12, viewport.height - height - 12);
-
-  return { left, top, width, height };
+  return {
+    top: 12,
+    right: 0,
+    bottom: 12,
+    width: Math.min(460, viewport.width - 24),
+  };
 }
 
 function mostRecentWindow(windows: ChatWindow[]) {
@@ -1087,10 +1133,6 @@ function flattenChatTabs(windows: ChatWindow[]) {
       tab,
     })),
   );
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
 function shortTitle(text: string) {
