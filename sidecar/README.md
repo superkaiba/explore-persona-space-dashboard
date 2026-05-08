@@ -1,13 +1,11 @@
 # EPS Sidecar
 
-Subprocesses the real `claude` CLI in headless mode (`claude --print
---output-format stream-json`) and streams its events to the Vercel chat
-rail over Cloudflare Tunnel.
+Subprocesses the real `claude` CLI or `codex exec` in headless mode and
+streams events to the Vercel chat rail over Cloudflare Tunnel.
 
-This means the chat agent is byte-identical to running `claude` in a
-terminal on the VM — same CLAUDE.md, same custom subagents, same skills,
-same MCP servers, same memory, same plugins, same model (Opus 4.7 1M),
-same default tools.
+Claude Code sessions are byte-identical to running `claude` in a terminal
+on the VM. Codex requests run through the installed Codex CLI with the same
+dashboard workdir.
 
 The lite chat at `/api/chat` keeps working — this sidecar adds the
 heavyweight mode the dashboard routes to via `/api/chat-full` when the
@@ -17,16 +15,16 @@ user toggles `FULL` in the rail header.
 
 | | `/api/chat` (Vercel) | `/api/chat-full` (sidecar) |
 |---|---|---|
-| Agent | Anthropic SDK + 5 hand-coded tools | Real `claude` CLI process |
-| Model | claude-sonnet-4-6 | claude-opus-4-7 1M |
-| Tools | list_claims / get_claim / etc. | every tool in your terminal Claude session (Bash, Read, Edit, Grep, MCP, plugins, ...) |
+| Agent | Anthropic SDK + 5 hand-coded tools | Real `claude` or `codex` CLI process |
+| Model | claude-sonnet-4-6 | Claude `opus` + `--effort xhigh`; Codex `gpt-5.5` + `xhigh` reasoning |
+| Tools | list_claims / get_claim / etc. | CLI agent tools in the VM workdir |
 | Project context | none | CLAUDE.md, settings.json, .mcp.json auto-loaded |
 | Custom subagents | none | all of `.claude/agents/` |
 | Custom skills / slash commands | none | all of `.claude/skills/` (and via `Skill` tool) |
 | Memory | none | `~/.claude/projects/.../memory/` auto-loaded |
 | Working dir | n/a | `EPS_WORKDIR` (research repo) |
 | Cost per query | ~$0.01 | $0.10–$1.00 (Opus + first-message cache miss); subsequent queries cache for ~10 min |
-| Per-request budget | n/a | `SIDECAR_MAX_BUDGET_USD` (default $1.00); `SIDECAR_TIMEOUT_S` (default 300s) |
+| Per-request timeout | n/a | `SIDECAR_TIMEOUT_S` (default 300s) |
 
 ## Setup on the VM
 

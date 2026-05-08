@@ -5,7 +5,7 @@ import { getDb } from "@/db/client";
 import { agentRunEvents, agentRuns } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import { authUserOrDev } from "@/lib/dev-auth";
-import { AGENT_RUN_MODES } from "@/lib/agent-runs";
+import { AGENT_RUN_MODES, AGENT_RUN_PROVIDERS } from "@/lib/agent-runs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +20,7 @@ async function requireUser() {
 
 const CreateBody = z.object({
   mode: z.enum(AGENT_RUN_MODES),
+  provider: z.enum(AGENT_RUN_PROVIDERS).optional(),
   sandboxPreview: z.boolean().optional(),
   request: z.string().trim().min(1).max(12000),
   chatSessionId: z.string().uuid().optional().nullable(),
@@ -42,6 +43,7 @@ export async function GET() {
     .select({
       id: agentRuns.id,
       mode: agentRuns.mode,
+      provider: agentRuns.provider,
       status: agentRuns.status,
       request: agentRuns.request,
       summary: agentRuns.summary,
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest) {
     .insert(agentRuns)
     .values({
       mode: body.mode,
+      provider: body.provider ?? "claude_code",
       sandboxPreview: body.sandboxPreview ?? false,
       status: "running",
       request: body.request,
@@ -97,6 +100,7 @@ export async function POST(req: NextRequest) {
     body: `Started ${body.mode} agent run.`,
     metadataJson: {
       mode: body.mode,
+      provider: body.provider ?? "claude_code",
       sandboxPreview: body.sandboxPreview ?? false,
       chatSessionId: body.chatSessionId ?? null,
     },

@@ -111,7 +111,7 @@ export function ImproveChatWindow() {
           </span>
           <span className="min-w-0 truncate text-[13px] font-medium">Dashboard improvements</span>
           <span className="ml-1 rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium tracking-wider text-running">
-            Claude Code
+            Agent
           </span>
           <button
             type="button"
@@ -160,7 +160,7 @@ export function ImproveChatWindow() {
             </span>
             <span className="min-w-0 truncate text-[13px] font-medium">Dashboard improvements</span>
             <span className="ml-1 rounded bg-running/15 px-1.5 py-0.5 text-[9px] font-medium tracking-wider text-running">
-              Claude Code
+              Agent
             </span>
             <button
               type="button"

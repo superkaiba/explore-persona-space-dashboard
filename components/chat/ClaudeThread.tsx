@@ -17,7 +17,11 @@ import {
   AGENT_RUN_MODE_HELP,
   AGENT_RUN_MODE_LABEL,
   AGENT_RUN_MODES,
+  AGENT_RUN_PROVIDER_HELP,
+  AGENT_RUN_PROVIDER_LABEL,
+  AGENT_RUN_PROVIDERS,
   type AgentRunMode,
+  type AgentRunProvider,
   type AgentRunStatus,
 } from "@/lib/agent-runs";
 
@@ -81,6 +85,7 @@ type ClaudeThreadProps = {
 type AgentRun = {
   id: string;
   mode: AgentRunMode;
+  provider: AgentRunProvider;
   sandboxPreview: boolean;
   status: AgentRunStatus;
   productionUrl: string | null;
@@ -98,6 +103,7 @@ function improvementDispatchPrompt(
   request: string,
   mode: AgentRunMode,
   sandboxPreview: boolean,
+  provider: AgentRunProvider,
   run: AgentRun | null,
 ) {
   const runId = run?.id ?? "untracked";
@@ -110,7 +116,8 @@ ${runUpdateSql(run.id, "running", "progress", "Inspected relevant files.")}
 If you produce a preview URL or Vercel deployment URL, update agent_run.preview_url or agent_run.vercel_deployment_url with psql.`
       : "Agent run tracking failed before dispatch; continue and report that run tracking was unavailable.";
 
-  const shared = `You are a Claude Code implementation agent running inside /home/thomasjiralerspong/explore-persona-space-dashboard on the project VM.
+  const agentName = AGENT_RUN_PROVIDER_LABEL[provider];
+  const shared = `You are a ${agentName} implementation agent running inside /home/thomasjiralerspong/explore-persona-space-dashboard on the project VM.
 
 The Vercel production dashboard is the live, always-evolving app:
 ${productionUrl}
@@ -224,6 +231,7 @@ export function ClaudeThread({
   const [pending, setPending] = useState(false);
   const [creating, setCreating] = useState(false);
   const [agentMode, setAgentMode] = useState<AgentRunMode>("direct_apply");
+  const [agentProvider, setAgentProvider] = useState<AgentRunProvider>("claude_code");
   const [sandboxPreview, setSandboxPreview] = useState(false);
   const skipNextLoadRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -325,6 +333,7 @@ export function ClaudeThread({
 
   async function createAgentRun(
     mode: AgentRunMode,
+    provider: AgentRunProvider,
     previewFirst: boolean,
     request: string,
     chatSessionId: string,
@@ -332,7 +341,7 @@ export function ClaudeThread({
     const r = await fetch("/api/agent-runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, sandboxPreview: previewFirst, request, chatSessionId }),
+      body: JSON.stringify({ mode, provider, sandboxPreview: previewFirst, request, chatSessionId }),
     });
     if (!r.ok) return null;
     const j = (await r.json()) as { run: AgentRun };
@@ -400,6 +409,7 @@ export function ClaudeThread({
     let cleanupSidecarSession: { id: string; sidecarUrl: string; token: string } | null = null;
     let runForRequest: AgentRun | null = null;
     const agentModeForRequest = agentMode;
+    const agentProviderForRequest = agentProvider;
     const sandboxPreviewForRequest = sandboxPreview;
 
     let session = activeSession;
@@ -451,6 +461,7 @@ export function ClaudeThread({
       if (kind === "improve") {
         runForRequest = await createAgentRun(
           agentModeForRequest,
+          agentProviderForRequest,
           sandboxPreviewForRequest,
           text,
           session.id,
@@ -500,6 +511,7 @@ export function ClaudeThread({
               text,
               agentModeForRequest,
               sandboxPreviewForRequest,
+              agentProviderForRequest,
               runForRequest,
             )
           : text;
@@ -511,6 +523,7 @@ export function ClaudeThread({
         },
         body: JSON.stringify({
           session_id: sidecarSessionId,
+          provider: agentProviderForRequest,
           messages: sidecarMessages(history, agentText),
         }),
       });
@@ -838,8 +851,29 @@ export function ClaudeThread({
             <span>Sandbox preview</span>
             <span className="font-mono text-[10px]">{sandboxPreview ? "on" : "off"}</span>
           </button>
+          <div className="mt-1.5 grid grid-cols-2 gap-1">
+            {AGENT_RUN_PROVIDERS.map((provider) => {
+              const active = agentProvider === provider;
+              return (
+                <button
+                  key={provider}
+                  type="button"
+                  onClick={() => setAgentProvider(provider)}
+                  disabled={pending || creating}
+                  title={AGENT_RUN_PROVIDER_HELP[provider]}
+                  className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                    active
+                      ? "border-fg bg-fg text-canvas"
+                      : "border-border bg-subtle text-muted hover:bg-border hover:text-fg"
+                  }`}
+                >
+                  {AGENT_RUN_PROVIDER_LABEL[provider]}
+                </button>
+              );
+            })}
+          </div>
           <p className="mt-1.5 text-[11px] leading-snug text-muted">
-            {AGENT_RUN_MODE_HELP[agentMode]}{" "}
+            {AGENT_RUN_MODE_HELP[agentMode]} {AGENT_RUN_PROVIDER_HELP[agentProvider]}{" "}
             {sandboxPreview
               ? "Implementation requests use a preview worktree before production."
               : "Implementation requests target production directly."}

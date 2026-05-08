@@ -5,6 +5,10 @@ export const AGENT_RUN_MODES = [
 
 export type AgentRunMode = (typeof AGENT_RUN_MODES)[number];
 
+export const AGENT_RUN_PROVIDERS = ["claude_code", "codex"] as const;
+
+export type AgentRunProvider = (typeof AGENT_RUN_PROVIDERS)[number];
+
 export const AGENT_RUN_STATUSES = [
   "queued",
   "running",
@@ -27,6 +31,16 @@ export const AGENT_RUN_MODE_LABEL: Record<AgentRunMode, string> = {
 export const AGENT_RUN_MODE_HELP: Record<AgentRunMode, string> = {
   clarify: "Inspect and ask targeted questions before changing files.",
   direct_apply: "Edit the main checkout, verify, commit, push, and deploy Vercel.",
+};
+
+export const AGENT_RUN_PROVIDER_LABEL: Record<AgentRunProvider, string> = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+};
+
+export const AGENT_RUN_PROVIDER_HELP: Record<AgentRunProvider, string> = {
+  claude_code: "Use Claude Code with Opus and xhigh effort.",
+  codex: "Use Codex CLI with GPT-5.5 and xhigh reasoning.",
 };
 
 export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {

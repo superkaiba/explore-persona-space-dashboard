@@ -1,18 +1,24 @@
-"""FastAPI sidecar that subprocesses the real `claude` CLI in headless mode.
+"""FastAPI sidecar that subprocesses Claude Code or Codex in headless mode.
 
 Sessions are PERSISTENT: one `claude` subprocess per chat thread, kept alive
 across messages. Cold start (CLAUDE.md, 200+ tools, plugins, MCP, memory)
 is ~10-15s on first message; subsequent messages reuse the loaded process
 and respond in <1s + agent-thinking time.
 
-Subprocess args:
+Claude subprocess args:
   claude --print --verbose
          --input-format stream-json
          --output-format stream-json
          --include-partial-messages
+         --model opus
+         --effort xhigh
          --permission-mode bypassPermissions
          --no-session-persistence
-         --max-budget-usd <N>
+
+Codex subprocess args:
+  codex exec --json --model gpt-5.5
+         -c model_reasoning_effort="xhigh"
+         --dangerously-bypass-approvals-and-sandbox -C <WORKDIR> -
 
 Sessions are GC'd after SESSION_IDLE_S seconds of inactivity.
 
@@ -52,8 +58,12 @@ WORKDIR = os.environ.get("EPS_WORKDIR", os.getcwd())
 HOST = os.environ.get("SIDECAR_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SIDECAR_PORT", "7654"))
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/home/thomasjiralerspong/.local/bin/claude")
+CODEX_BIN = os.environ.get("CODEX_BIN", "/home/thomasjiralerspong/.npm-global/bin/codex")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "opus")
+CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "xhigh")
+CODEX_MODEL = os.environ.get("CODEX_MODEL", "gpt-5.5")
+CODEX_REASONING_EFFORT = os.environ.get("CODEX_REASONING_EFFORT", "xhigh")
 PERMISSION_MODE = os.environ.get("CLAUDE_PERMISSION_MODE", "bypassPermissions")
-MAX_BUDGET_USD = os.environ.get("SIDECAR_MAX_BUDGET_USD", "1.00")
 TURN_TIMEOUT_S = int(os.environ.get("SIDECAR_TURN_TIMEOUT_S", "300"))
 SESSION_IDLE_S = int(os.environ.get("SIDECAR_SESSION_IDLE_S", str(30 * 60)))
 SESSION_SWEEP_S = 60
@@ -64,6 +74,8 @@ if not ANTHROPIC_API_KEY:
     log.warning("ANTHROPIC_API_KEY not set — claude will fail to authenticate")
 if not os.path.isfile(CLAUDE_BIN) or not os.access(CLAUDE_BIN, os.X_OK):
     log.warning("CLAUDE_BIN at %s not executable", CLAUDE_BIN)
+if not os.path.isfile(CODEX_BIN) or not os.access(CODEX_BIN, os.X_OK):
+    log.warning("CODEX_BIN at %s not executable", CODEX_BIN)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────
@@ -229,11 +241,13 @@ async def create_session(sid: str) -> Session:
         "--output-format",
         "stream-json",
         "--include-partial-messages",
+        "--model",
+        CLAUDE_MODEL,
+        "--effort",
+        CLAUDE_EFFORT,
         "--permission-mode",
         PERMISSION_MODE,
         "--no-session-persistence",
-        "--max-budget-usd",
-        MAX_BUDGET_USD,
         "--append-system-prompt",
         DASHBOARD_CONTEXT_PROMPT,
     ]
@@ -308,8 +322,12 @@ def health() -> dict[str, Any]:
         "ok": True,
         "workdir": WORKDIR,
         "claude_bin": CLAUDE_BIN,
+        "codex_bin": CODEX_BIN,
+        "claude_model": CLAUDE_MODEL,
+        "claude_effort": CLAUDE_EFFORT,
+        "codex_model": CODEX_MODEL,
+        "codex_reasoning_effort": CODEX_REASONING_EFFORT,
         "permission_mode": PERMISSION_MODE,
-        "max_budget_usd": MAX_BUDGET_USD,
         "session_idle_s": SESSION_IDLE_S,
         "active_sessions": len(sessions),
         "has_secret": bool(SHARED_SECRET),
@@ -325,6 +343,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     session_id: str | None = None
+    provider: str | None = "claude_code"
 
 
 def _prompt_for_session(messages: list[ChatMessage], include_history: bool) -> str:
@@ -339,11 +358,98 @@ def _prompt_for_session(messages: list[ChatMessage], include_history: bool) -> s
         f"{m.role.upper()}:\n{m.content}" for m in prior if m.content.strip()
     )
     return (
-        "Resume this saved EPS Dashboard Claude Code conversation. "
+        "Resume this saved EPS Dashboard agent conversation. "
         "Use the prior transcript for continuity, but answer the final user message.\n\n"
         f"Prior transcript:\n{transcript}\n\n"
         f"Final user message:\n{last_user.content}"
     )
+
+
+async def _drain_stderr(proc: asyncio.subprocess.Process) -> list[str]:
+    assert proc.stderr is not None
+    lines: list[str] = []
+    while True:
+        raw = await proc.stderr.readline()
+        if not raw:
+            return lines
+        text = raw.decode("utf-8", errors="replace").strip()
+        if text:
+            lines.append(text)
+
+
+async def codex_event_stream(req: ChatRequest, sid: str) -> AsyncIterator[dict[str, str]]:
+    prompt = _prompt_for_session(req.messages, include_history=len(req.messages) > 1)
+    yield {"event": "session", "data": json.dumps({"session_id": sid, "fresh": True})}
+    yield {"event": "starting", "data": json.dumps({"phase": "spawning"})}
+
+    args = [
+        CODEX_BIN,
+        "exec",
+        "--json",
+        "--model",
+        CODEX_MODEL,
+        "-c",
+        f'model_reasoning_effort="{CODEX_REASONING_EFFORT}"',
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-C",
+        WORKDIR,
+        "-",
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=WORKDIR,
+        env={**os.environ, "DASHBOARD_DATABASE_URL": DASHBOARD_DATABASE_URL},
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        limit=16 * 1024 * 1024,
+    )
+    stderr_task = asyncio.create_task(_drain_stderr(proc))
+    assert proc.stdin is not None
+    proc.stdin.write(prompt.encode("utf-8"))
+    await proc.stdin.drain()
+    proc.stdin.close()
+
+    yield {"event": "starting", "data": json.dumps({"phase": "loading"})}
+    yield {"event": "ready", "data": json.dumps({"model": "codex", "tools": 0})}
+
+    try:
+        assert proc.stdout is not None
+        async with asyncio.timeout(TURN_TIMEOUT_S):
+            while True:
+                raw = await proc.stdout.readline()
+                if not raw:
+                    break
+                line = raw.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                try:
+                    evt = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                for sse_name, sse_data in translate_codex(evt):
+                    yield {"event": sse_name, "data": json.dumps(sse_data)}
+
+            code = await proc.wait()
+            stderr_lines = await stderr_task
+            if code != 0:
+                message = "\n".join(stderr_lines[-8:]) or f"codex exited with {code}"
+                yield {"event": "error", "data": json.dumps({"message": message})}
+                yield {"event": "done", "data": json.dumps({"stop_reason": "error"})}
+                return
+            yield {"event": "done", "data": json.dumps({"stop_reason": "end_turn"})}
+    except TimeoutError:
+        if proc.returncode is None:
+            proc.kill()
+        yield {
+            "event": "error",
+            "data": json.dumps({"message": f"turn timed out after {TURN_TIMEOUT_S}s"}),
+        }
+        yield {"event": "done", "data": json.dumps({"stop_reason": "timeout"})}
+    except asyncio.CancelledError:
+        if proc.returncode is None:
+            proc.terminate()
+        raise
 
 
 @app.post("/chat", dependencies=[Depends(require_secret)])
@@ -355,6 +461,11 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
     # Use the caller's session_id verbatim if given (creating a new session
     # under that id if it doesn't exist yet); otherwise mint one.
     sid = req.session_id or uuid.uuid4().hex
+    provider = (req.provider or "claude_code").strip().lower()
+    if provider == "codex":
+        return EventSourceResponse(codex_event_stream(req, sid))
+    if provider not in {"claude", "claude_code"}:
+        raise HTTPException(400, "provider must be claude_code or codex")
     is_new = sid not in sessions
 
     async def event_stream() -> AsyncIterator[dict[str, str]]:
@@ -530,6 +641,53 @@ def translate(evt: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
         ]
 
     return []
+
+
+def translate_codex(evt: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Map Codex CLI JSONL events to the dashboard SSE event shape."""
+    t = evt.get("type")
+    item = evt.get("item") if isinstance(evt.get("item"), dict) else {}
+    out: list[tuple[str, dict[str, Any]]] = []
+
+    if t == "item.started" and item.get("type") == "command_execution":
+        out.append(
+            (
+                "tool_use",
+                {
+                    "name": "Bash",
+                    "input": {"command": item.get("command", "")},
+                    "id": item.get("id"),
+                },
+            )
+        )
+        return out
+
+    if t == "item.completed" and item.get("type") == "command_execution":
+        content = str(item.get("aggregated_output", ""))
+        if len(content) > 8000:
+            content = content[:8000] + f"\n…[truncated, {len(content) - 8000} more chars]"
+        out.append(
+            (
+                "tool_result",
+                {
+                    "tool_use_id": item.get("id", ""),
+                    "ok": item.get("exit_code") == 0,
+                    "content": content,
+                },
+            )
+        )
+        return out
+
+    if t == "item.completed" and item.get("type") == "agent_message":
+        text = str(item.get("text", ""))
+        if text:
+            out.append(("token", {"text": text}))
+        return out
+
+    if t == "turn.failed":
+        return [("error", {"message": str(evt.get("error", "codex turn failed"))})]
+
+    return out
 
 
 def main() -> None:
