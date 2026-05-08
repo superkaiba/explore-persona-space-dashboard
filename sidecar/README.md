@@ -24,7 +24,7 @@ user toggles `FULL` in the rail header.
 | Memory | none | `~/.claude/projects/.../memory/` auto-loaded |
 | Working dir | n/a | `EPS_WORKDIR` (research repo) |
 | Cost per query | ~$0.01 | $0.10–$1.00 (Opus + first-message cache miss); subsequent queries cache for ~10 min |
-| Per-request timeout | n/a | `SIDECAR_TIMEOUT_S` (default 300s) |
+| Per-request timeout | n/a | none by default; set `SIDECAR_TURN_TIMEOUT_S` to add a cap |
 
 ## Setup on the VM
 
@@ -126,6 +126,6 @@ You should see streamed `event: token / tool_use / tool_result / done` lines.
 
 - One agent session per request (no resume yet — `session_id` field is
   reserved for the future)
-- 15-turn cap by default — long debugging sessions may need raising
+- Long-running turns are uncapped by default; set `SIDECAR_TURN_TIMEOUT_S` only if you want a cap
 - No CORS to anything besides the Vercel URL — change `allow_origins` if
   testing from elsewhere

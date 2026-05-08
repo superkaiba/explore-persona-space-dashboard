@@ -38,6 +38,7 @@ import secrets
 import time as _time
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from dotenv import load_dotenv
@@ -64,7 +65,7 @@ CLAUDE_EFFORT = os.environ.get("CLAUDE_EFFORT", "xhigh")
 CODEX_MODEL = os.environ.get("CODEX_MODEL", "gpt-5.5")
 CODEX_REASONING_EFFORT = os.environ.get("CODEX_REASONING_EFFORT", "xhigh")
 PERMISSION_MODE = os.environ.get("CLAUDE_PERMISSION_MODE", "bypassPermissions")
-TURN_TIMEOUT_S = int(os.environ.get("SIDECAR_TURN_TIMEOUT_S", "300"))
+TURN_TIMEOUT_S = int(os.environ.get("SIDECAR_TURN_TIMEOUT_S", "0"))
 SESSION_IDLE_S = int(os.environ.get("SIDECAR_SESSION_IDLE_S", str(30 * 60)))
 SESSION_SWEEP_S = 60
 
@@ -328,6 +329,7 @@ def health() -> dict[str, Any]:
         "codex_model": CODEX_MODEL,
         "codex_reasoning_effort": CODEX_REASONING_EFFORT,
         "permission_mode": PERMISSION_MODE,
+        "turn_timeout_s": TURN_TIMEOUT_S,
         "session_idle_s": SESSION_IDLE_S,
         "active_sessions": len(sessions),
         "has_secret": bool(SHARED_SECRET),
@@ -377,6 +379,16 @@ async def _drain_stderr(proc: asyncio.subprocess.Process) -> list[str]:
             lines.append(text)
 
 
+@asynccontextmanager
+async def maybe_turn_timeout() -> AsyncIterator[None]:
+    """Wrap a turn in the configured timeout. Set SIDECAR_TURN_TIMEOUT_S=0 to disable."""
+    if TURN_TIMEOUT_S <= 0:
+        yield
+        return
+    async with asyncio.timeout(TURN_TIMEOUT_S):
+        yield
+
+
 async def codex_event_stream(req: ChatRequest, sid: str) -> AsyncIterator[dict[str, str]]:
     prompt = _prompt_for_session(req.messages, include_history=len(req.messages) > 1)
     yield {"event": "session", "data": json.dumps({"session_id": sid, "fresh": True})}
@@ -415,7 +427,7 @@ async def codex_event_stream(req: ChatRequest, sid: str) -> AsyncIterator[dict[s
 
     try:
         assert proc.stdout is not None
-        async with asyncio.timeout(TURN_TIMEOUT_S):
+        async with maybe_turn_timeout():
             while True:
                 raw = await proc.stdout.readline()
                 if not raw:
@@ -503,7 +515,7 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
                 await session.proc.stdin.drain()
 
                 # Stream events until the result event for this turn
-                async with asyncio.timeout(TURN_TIMEOUT_S):
+                async with maybe_turn_timeout():
                     while True:
                         evt = await session.queue.get()
                         if evt is None:
@@ -522,9 +534,19 @@ async def chat(req: ChatRequest) -> EventSourceResponse:
                             return
 
         except TimeoutError:
+            timed_out = sessions.pop(sid, None)
+            if timed_out:
+                await timed_out.stop()
             yield {
                 "event": "error",
-                "data": json.dumps({"message": f"turn timed out after {TURN_TIMEOUT_S}s"}),
+                "data": json.dumps(
+                    {
+                        "message": (
+                            f"turn timed out after {TURN_TIMEOUT_S}s; "
+                            "the Claude Code session was restarted"
+                        )
+                    }
+                ),
             }
             yield {"event": "done", "data": json.dumps({"stop_reason": "timeout"})}
         except asyncio.CancelledError:

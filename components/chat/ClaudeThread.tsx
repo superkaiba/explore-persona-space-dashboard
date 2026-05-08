@@ -406,7 +406,6 @@ export function ClaudeThread({
     e.preventDefault();
     const text = draft.trim();
     if (!text || pending) return;
-    let cleanupSidecarSession: { id: string; sidecarUrl: string; token: string } | null = null;
     let runForRequest: AgentRun | null = null;
     const agentModeForRequest = agentMode;
     const agentProviderForRequest = agentProvider;
@@ -497,14 +496,9 @@ export function ClaudeThread({
       };
       const sidecarSessionId =
         kind === "improve"
-          ? `dashboard-improve-${session.id.replace(/-/g, "").slice(0, 16)}-${makeClientId("run")
-              .replace(/-/g, "")
-              .slice(0, 8)}`
+          ? `dashboard-improve-${session.id.replace(/-/g, "").slice(0, 16)}`
           : session.agentHandle ??
             `dashboard-${kind}-${session.id.replace(/-/g, "").slice(0, 16)}`;
-      if (kind === "improve") {
-        cleanupSidecarSession = { id: sidecarSessionId, sidecarUrl, token };
-      }
       const agentText =
         kind === "improve"
           ? improvementDispatchPrompt(
@@ -693,16 +687,6 @@ export function ClaudeThread({
         m.blocks.push({ kind: "text", text: `\n\n${msg}` });
       });
     } finally {
-      if (cleanupSidecarSession) {
-        void fetch(`${cleanupSidecarSession.sidecarUrl}/end-session`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${cleanupSidecarSession.token}`,
-          },
-          body: JSON.stringify({ session_id: cleanupSidecarSession.id }),
-        });
-      }
       setPending(false);
     }
   }
