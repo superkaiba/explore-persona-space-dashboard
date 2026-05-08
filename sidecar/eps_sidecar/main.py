@@ -281,6 +281,8 @@ async def gc_loop() -> None:
         stale: list[str] = []
         async with sessions_lock:
             for sid, s in list(sessions.items()):
+                if s.lock.locked():
+                    continue
                 if now - s.last_active > SESSION_IDLE_S or s.proc.returncode is not None:
                     stale.append(sid)
         for sid in stale:
