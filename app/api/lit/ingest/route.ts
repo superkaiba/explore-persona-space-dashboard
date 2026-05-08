@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db/client";
 import {
@@ -133,53 +133,6 @@ function asDate(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-async function resolveItemId(
-  externalId: string,
-  map: Map<string, string>,
-): Promise<string | null> {
-  const mapped = map.get(externalId);
-  if (mapped) return mapped;
-  const db = getDb();
-  const [row] = await db
-    .select({ id: litItems.id, externalId: litItems.externalId })
-    .from(litItems)
-    .where(eq(litItems.externalId, externalId))
-    .limit(1);
-  if (!row) return null;
-  map.set(row.externalId, row.id);
-  return row.id;
-}
-
-async function resolveIdeaId(
-  input: { externalId?: string | null; slug?: string | null },
-  map: Map<string, string>,
-): Promise<string | null> {
-  const key = input.externalId ?? input.slug ?? "";
-  const mapped = map.get(key);
-  if (mapped) return mapped;
-
-  const db = getDb();
-  const rows = input.externalId
-    ? await db
-        .select({ id: researchIdeas.id, externalId: researchIdeas.externalId, slug: researchIdeas.slug })
-        .from(researchIdeas)
-        .where(eq(researchIdeas.externalId, input.externalId))
-        .limit(1)
-    : input.slug
-      ? await db
-          .select({ id: researchIdeas.id, externalId: researchIdeas.externalId, slug: researchIdeas.slug })
-          .from(researchIdeas)
-          .where(eq(researchIdeas.slug, input.slug))
-          .limit(1)
-      : [];
-
-  const row = rows[0];
-  if (!row) return null;
-  map.set(row.externalId, row.id);
-  map.set(row.slug, row.id);
-  return row.id;
-}
-
 export async function POST(req: NextRequest) {
   const secret = process.env.LIT_INGEST_SECRET;
   if (!secret) {
@@ -207,34 +160,84 @@ export async function POST(req: NextRequest) {
   const itemExternalToId = new Map<string, string>();
   const ideaKeyToId = new Map<string, string>();
 
-  for (const item of parsed.items) {
-    const [row] = await db
+  const excluded = (column: string) => sql.raw(`excluded.${column}`);
+  const chunk = <T,>(values: T[], size = 500) => {
+    const batches: T[][] = [];
+    for (let i = 0; i < values.length; i += size) batches.push(values.slice(i, i + size));
+    return batches;
+  };
+  const uniqueTexts = (values: Iterable<string | null | undefined>) => {
+    const seen = new Set<string>();
+    for (const value of values) {
+      const text = value?.trim();
+      if (text) seen.add(text);
+    }
+    return Array.from(seen);
+  };
+  const dedupeBy = <T,>(
+    values: T[],
+    keyFn: (value: T) => string | null | undefined,
+  ) => {
+    const byKey = new Map<string, T>();
+    for (const value of values) {
+      const key = keyFn(value);
+      if (key) byKey.set(key, value);
+    }
+    return Array.from(byKey.values());
+  };
+
+  const loadItemIds = async (externalIds: Iterable<string | null | undefined>) => {
+    const missing = uniqueTexts(externalIds).filter((id) => !itemExternalToId.has(id));
+    for (const batch of chunk(missing)) {
+      const rows = await db
+        .select({ id: litItems.id, externalId: litItems.externalId })
+        .from(litItems)
+        .where(inArray(litItems.externalId, batch));
+      for (const row of rows) itemExternalToId.set(row.externalId, row.id);
+    }
+  };
+
+  const loadIdeaIds = async (
+    refs: Iterable<{ externalId?: string | null; slug?: string | null }>,
+  ) => {
+    const allRefs = Array.from(refs);
+    const externalIds = uniqueTexts(allRefs.map((ref) => ref.externalId)).filter(
+      (id) => !ideaKeyToId.has(id),
+    );
+    const slugs = uniqueTexts(allRefs.map((ref) => ref.slug)).filter(
+      (slug) => !ideaKeyToId.has(slug),
+    );
+
+    for (const batch of chunk(externalIds)) {
+      const rows = await db
+        .select({ id: researchIdeas.id, externalId: researchIdeas.externalId, slug: researchIdeas.slug })
+        .from(researchIdeas)
+        .where(inArray(researchIdeas.externalId, batch));
+      for (const row of rows) {
+        ideaKeyToId.set(row.externalId, row.id);
+        ideaKeyToId.set(row.slug, row.id);
+      }
+    }
+
+    for (const batch of chunk(slugs)) {
+      const rows = await db
+        .select({ id: researchIdeas.id, externalId: researchIdeas.externalId, slug: researchIdeas.slug })
+        .from(researchIdeas)
+        .where(inArray(researchIdeas.slug, batch));
+      for (const row of rows) {
+        ideaKeyToId.set(row.externalId, row.id);
+        ideaKeyToId.set(row.slug, row.id);
+      }
+    }
+  };
+
+  const items = dedupeBy(parsed.items, (item) => item.externalId);
+  if (items.length > 0) {
+    const rows = await db
       .insert(litItems)
-      .values({
-        externalId: item.externalId,
-        type: item.type,
-        title: item.title,
-        authorsJson: item.authors ?? null,
-        abstract: item.abstract ?? null,
-        summary: item.summary ?? null,
-        url: item.url ?? null,
-        pdfUrl: item.pdfUrl ?? null,
-        arxivId: item.arxivId ?? null,
-        doi: item.doi ?? null,
-        source: item.source ?? null,
-        sourceDetail: item.sourceDetail ?? null,
-        tagsJson: item.tags ?? null,
-        metadataJson: item.metadata ?? null,
-        publishedAt: asDate(item.publishedAt),
-        discoveredAt: asDate(item.discoveredAt) ?? now,
-        workflowUpdatedAt: asDate(item.workflowUpdatedAt),
-        public: item.public,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: litItems.externalId,
-        set: {
+      .values(
+        items.map((item) => ({
+          externalId: item.externalId,
           type: item.type,
           title: item.title,
           authorsJson: item.authors ?? null,
@@ -249,38 +252,47 @@ export async function POST(req: NextRequest) {
           tagsJson: item.tags ?? null,
           metadataJson: item.metadata ?? null,
           publishedAt: asDate(item.publishedAt),
+          discoveredAt: asDate(item.discoveredAt) ?? now,
           workflowUpdatedAt: asDate(item.workflowUpdatedAt),
           public: item.public,
+          createdAt: now,
           updatedAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: litItems.externalId,
+        set: {
+          type: excluded("type"),
+          title: excluded("title"),
+          authorsJson: excluded("authors_json"),
+          abstract: excluded("abstract"),
+          summary: excluded("summary"),
+          url: excluded("url"),
+          pdfUrl: excluded("pdf_url"),
+          arxivId: excluded("arxiv_id"),
+          doi: excluded("doi"),
+          source: excluded("source"),
+          sourceDetail: excluded("source_detail"),
+          tagsJson: excluded("tags_json"),
+          metadataJson: excluded("metadata_json"),
+          publishedAt: excluded("published_at"),
+          workflowUpdatedAt: excluded("workflow_updated_at"),
+          public: excluded("public"),
+          updatedAt: excluded("updated_at"),
         },
       })
       .returning({ id: litItems.id, externalId: litItems.externalId });
-    itemExternalToId.set(row.externalId, row.id);
+    for (const row of rows) itemExternalToId.set(row.externalId, row.id);
   }
 
-  for (const idea of parsed.ideas) {
-    const slug = idea.slug ?? slugify(idea.title);
-    const [row] = await db
+  const ideas = dedupeBy(parsed.ideas, (idea) => idea.externalId);
+  if (ideas.length > 0) {
+    const rows = await db
       .insert(researchIdeas)
-      .values({
-        externalId: idea.externalId,
-        slug,
-        title: idea.title,
-        status: idea.status,
-        shortSummary: idea.shortSummary ?? null,
-        expandedSummary: idea.expandedSummary ?? null,
-        hypothesis: idea.hypothesis ?? null,
-        motivation: idea.motivation ?? null,
-        nextExperiments: idea.nextExperiments ?? null,
-        sourcePath: idea.sourcePath ?? null,
-        public: idea.public,
-        createdAt: now,
-        updatedAt: asDate(idea.updatedAt) ?? now,
-      })
-      .onConflictDoUpdate({
-        target: researchIdeas.externalId,
-        set: {
-          slug,
+      .values(
+        ideas.map((idea) => ({
+          externalId: idea.externalId,
+          slug: idea.slug ?? slugify(idea.title),
           title: idea.title,
           status: idea.status,
           shortSummary: idea.shortSummary ?? null,
@@ -290,7 +302,24 @@ export async function POST(req: NextRequest) {
           nextExperiments: idea.nextExperiments ?? null,
           sourcePath: idea.sourcePath ?? null,
           public: idea.public,
+          createdAt: now,
           updatedAt: asDate(idea.updatedAt) ?? now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: researchIdeas.externalId,
+        set: {
+          slug: excluded("slug"),
+          title: excluded("title"),
+          status: excluded("status"),
+          shortSummary: excluded("short_summary"),
+          expandedSummary: excluded("expanded_summary"),
+          hypothesis: excluded("hypothesis"),
+          motivation: excluded("motivation"),
+          nextExperiments: excluded("next_experiments"),
+          sourcePath: excluded("source_path"),
+          public: excluded("public"),
+          updatedAt: excluded("updated_at"),
         },
       })
       .returning({
@@ -298,126 +327,67 @@ export async function POST(req: NextRequest) {
         externalId: researchIdeas.externalId,
         slug: researchIdeas.slug,
       });
-    ideaKeyToId.set(row.externalId, row.id);
-    ideaKeyToId.set(row.slug, row.id);
+    for (const row of rows) {
+      ideaKeyToId.set(row.externalId, row.id);
+      ideaKeyToId.set(row.slug, row.id);
+    }
   }
 
   let skippedAnalyses = 0;
+  await loadItemIds(parsed.analyses.map((analysis) => analysis.itemExternalId));
+  const analysesByExternalId = new Map<string, typeof litItemAnalyses.$inferInsert>();
   for (const analysis of parsed.analyses) {
-    const itemId = await resolveItemId(analysis.itemExternalId, itemExternalToId);
+    const itemId = itemExternalToId.get(analysis.itemExternalId);
     if (!itemId) {
       skippedAnalyses += 1;
       continue;
     }
     const externalId =
       analysis.externalId ?? analysis.sourcePath ?? `${analysis.itemExternalId}:analysis`;
+    analysesByExternalId.set(externalId, {
+      externalId,
+      itemId,
+      analysisMd: analysis.analysisMd ?? null,
+      tldr: analysis.tldr ?? null,
+      threatLevel: analysis.threatLevel ?? null,
+      readSignal: analysis.readSignal ?? null,
+      section: analysis.section ?? null,
+      aimTag: analysis.aimTag ?? null,
+      sourcePath: analysis.sourcePath ?? null,
+      generatedAt: asDate(analysis.generatedAt),
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const analysisRows = Array.from(analysesByExternalId.values());
+  if (analysisRows.length > 0) {
     await db
       .insert(litItemAnalyses)
-      .values({
-        externalId,
-        itemId,
-        analysisMd: analysis.analysisMd ?? null,
-        tldr: analysis.tldr ?? null,
-        threatLevel: analysis.threatLevel ?? null,
-        readSignal: analysis.readSignal ?? null,
-        section: analysis.section ?? null,
-        aimTag: analysis.aimTag ?? null,
-        sourcePath: analysis.sourcePath ?? null,
-        generatedAt: asDate(analysis.generatedAt),
-        createdAt: now,
-        updatedAt: now,
-      })
+      .values(analysisRows)
       .onConflictDoUpdate({
         target: litItemAnalyses.externalId,
         set: {
-          itemId,
-          analysisMd: analysis.analysisMd ?? null,
-          tldr: analysis.tldr ?? null,
-          threatLevel: analysis.threatLevel ?? null,
-          readSignal: analysis.readSignal ?? null,
-          section: analysis.section ?? null,
-          aimTag: analysis.aimTag ?? null,
-          sourcePath: analysis.sourcePath ?? null,
-          generatedAt: asDate(analysis.generatedAt),
-          updatedAt: now,
+          itemId: excluded("item_id"),
+          analysisMd: excluded("analysis_md"),
+          tldr: excluded("tldr"),
+          threatLevel: excluded("threat_level"),
+          readSignal: excluded("read_signal"),
+          section: excluded("section"),
+          aimTag: excluded("aim_tag"),
+          sourcePath: excluded("source_path"),
+          generatedAt: excluded("generated_at"),
+          updatedAt: excluded("updated_at"),
         },
       });
   }
 
-  let skippedLinks = 0;
-  for (const link of parsed.links) {
-    const ideaId = await resolveIdeaId(
-      { externalId: link.ideaExternalId, slug: link.ideaSlug },
-      ideaKeyToId,
-    );
-    const itemId = await resolveItemId(link.itemExternalId, itemExternalToId);
-    if (!ideaId || !itemId) {
-      skippedLinks += 1;
-      continue;
-    }
-
-    const [existing] = await db
-      .select({ id: litIdeaLinks.id, status: litIdeaLinks.status })
-      .from(litIdeaLinks)
-      .where(
-        and(
-          eq(litIdeaLinks.ideaId, ideaId),
-          eq(litIdeaLinks.itemId, itemId),
-          eq(litIdeaLinks.relationType, link.relationType),
-        ),
-      )
-      .limit(1);
-
-    const nextStatus =
-      existing?.status && existing.status !== "proposed" && link.status === "proposed"
-        ? existing.status
-        : link.status;
-
-    if (existing) {
-      await db
-        .update(litIdeaLinks)
-        .set({
-          confidence: link.confidence ?? null,
-          rationale: link.rationale ?? null,
-          source: link.source,
-          status: nextStatus,
-          updatedAt: now,
-        })
-        .where(eq(litIdeaLinks.id, existing.id));
-    } else {
-      await db.insert(litIdeaLinks).values({
-        ideaId,
-        itemId,
-        relationType: link.relationType,
-        confidence: link.confidence ?? null,
-        rationale: link.rationale ?? null,
-        status: nextStatus,
-        source: link.source,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-  }
-
-  for (const run of parsed.runs) {
+  const runs = dedupeBy(parsed.runs, (run) => run.runDate);
+  if (runs.length > 0) {
     await db
       .insert(litDigestRuns)
-      .values({
-        runDate: run.runDate,
-        status: run.status,
-        startedAt: asDate(run.startedAt),
-        finishedAt: asDate(run.finishedAt),
-        candidateCount: run.candidateCount ?? null,
-        selectedCount: run.selectedCount ?? null,
-        logPath: run.logPath ?? null,
-        summaryMd: run.summaryMd ?? null,
-        notificationStatus: run.notificationStatus ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: litDigestRuns.runDate,
-        set: {
+      .values(
+        runs.map((run) => ({
+          runDate: run.runDate,
           status: run.status,
           startedAt: asDate(run.startedAt),
           finishedAt: asDate(run.finishedAt),
@@ -426,22 +396,80 @@ export async function POST(req: NextRequest) {
           logPath: run.logPath ?? null,
           summaryMd: run.summaryMd ?? null,
           notificationStatus: run.notificationStatus ?? null,
+          createdAt: now,
           updatedAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: litDigestRuns.runDate,
+        set: {
+          status: excluded("status"),
+          startedAt: excluded("started_at"),
+          finishedAt: excluded("finished_at"),
+          candidateCount: excluded("candidate_count"),
+          selectedCount: excluded("selected_count"),
+          logPath: excluded("log_path"),
+          summaryMd: excluded("summary_md"),
+          notificationStatus: excluded("notification_status"),
+          updatedAt: excluded("updated_at"),
+        },
+      });
+  }
+
+  let skippedLinks = 0;
+  await loadIdeaIds(parsed.links.map((link) => ({ externalId: link.ideaExternalId, slug: link.ideaSlug })));
+  await loadItemIds(parsed.links.map((link) => link.itemExternalId));
+  const linkRowsByKey = new Map<string, typeof litIdeaLinks.$inferInsert>();
+  for (const link of parsed.links) {
+    const ideaId =
+      (link.ideaExternalId ? ideaKeyToId.get(link.ideaExternalId) : undefined) ??
+      (link.ideaSlug ? ideaKeyToId.get(link.ideaSlug) : undefined);
+    const itemId = itemExternalToId.get(link.itemExternalId);
+    if (!ideaId || !itemId) {
+      skippedLinks += 1;
+      continue;
+    }
+    linkRowsByKey.set(`${ideaId}:${itemId}:${link.relationType}`, {
+      ideaId,
+      itemId,
+      relationType: link.relationType,
+      confidence: link.confidence ?? null,
+      rationale: link.rationale ?? null,
+      status: link.status,
+      source: link.source,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const linkRows = Array.from(linkRowsByKey.values());
+  if (linkRows.length > 0) {
+    await db
+      .insert(litIdeaLinks)
+      .values(linkRows)
+      .onConflictDoUpdate({
+        target: [litIdeaLinks.ideaId, litIdeaLinks.itemId, litIdeaLinks.relationType],
+        set: {
+          confidence: excluded("confidence"),
+          rationale: excluded("rationale"),
+          source: excluded("source"),
+          status: sql`case when ${litIdeaLinks.status} != 'proposed' and excluded.status = 'proposed' then ${litIdeaLinks.status} else excluded.status end`,
+          updatedAt: excluded("updated_at"),
         },
       });
   }
 
   let skippedEvents = 0;
+  await loadIdeaIds(parsed.events.map((event) => ({ externalId: event.ideaExternalId, slug: event.ideaSlug })));
+  const eventRowsByExternalId = new Map<string, typeof researchIdeaEvents.$inferInsert>();
+  const eventRowsWithoutExternalId: (typeof researchIdeaEvents.$inferInsert)[] = [];
   for (const event of parsed.events) {
-    const ideaId = await resolveIdeaId(
-      { externalId: event.ideaExternalId, slug: event.ideaSlug },
-      ideaKeyToId,
-    );
+    const ideaId =
+      (event.ideaExternalId ? ideaKeyToId.get(event.ideaExternalId) : undefined) ??
+      (event.ideaSlug ? ideaKeyToId.get(event.ideaSlug) : undefined);
     if (!ideaId) {
       skippedEvents += 1;
       continue;
     }
-
     const values = {
       externalId: event.externalId ?? null,
       ideaId,
@@ -450,29 +478,34 @@ export async function POST(req: NextRequest) {
       public: event.public,
       createdAt: asDate(event.createdAt) ?? now,
     };
-
-    if (event.externalId) {
-      await db
-        .insert(researchIdeaEvents)
-        .values(values)
-        .onConflictDoUpdate({
-          target: researchIdeaEvents.externalId,
-          set: {
-            ideaId,
-            eventType: event.eventType,
-            body: event.body,
-            public: event.public,
-            createdAt: asDate(event.createdAt) ?? now,
-          },
-        });
-    } else {
-      await db.insert(researchIdeaEvents).values(values);
-    }
+    if (event.externalId) eventRowsByExternalId.set(event.externalId, values);
+    else eventRowsWithoutExternalId.push(values);
+  }
+  const eventRows = Array.from(eventRowsByExternalId.values());
+  if (eventRows.length > 0) {
+    await db
+      .insert(researchIdeaEvents)
+      .values(eventRows)
+      .onConflictDoUpdate({
+        target: researchIdeaEvents.externalId,
+        set: {
+          ideaId: excluded("idea_id"),
+          eventType: excluded("event_type"),
+          body: excluded("body"),
+          public: excluded("public"),
+          createdAt: excluded("created_at"),
+        },
+      });
+  }
+  if (eventRowsWithoutExternalId.length > 0) {
+    await db.insert(researchIdeaEvents).values(eventRowsWithoutExternalId);
   }
 
   let skippedStates = 0;
+  await loadItemIds(parsed.states.map((state) => state.itemExternalId));
+  const stateRowsByKey = new Map<string, typeof litItemStates.$inferInsert>();
   for (const state of parsed.states) {
-    const itemId = await resolveItemId(state.itemExternalId, itemExternalToId);
+    const itemId = itemExternalToId.get(state.itemExternalId);
     if (!itemId) {
       skippedStates += 1;
       continue;
@@ -481,28 +514,32 @@ export async function POST(req: NextRequest) {
     const readAt =
       state.readStatus === "read" ? asDate(state.readAt) ?? now : asDate(state.readAt);
 
+    stateRowsByKey.set(`${itemId}:${state.userId}`, {
+      itemId,
+      userId: state.userId,
+      userEmail: state.userEmail ?? null,
+      readStatus: state.readStatus,
+      notes: state.notes ?? null,
+      archived: state.archived,
+      readAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const stateRows = Array.from(stateRowsByKey.values());
+  if (stateRows.length > 0) {
     await db
       .insert(litItemStates)
-      .values({
-        itemId,
-        userId: state.userId,
-        userEmail: state.userEmail ?? null,
-        readStatus: state.readStatus,
-        notes: state.notes ?? null,
-        archived: state.archived,
-        readAt,
-        createdAt: now,
-        updatedAt: now,
-      })
+      .values(stateRows)
       .onConflictDoUpdate({
         target: [litItemStates.itemId, litItemStates.userId],
         set: {
-          userEmail: state.userEmail ?? null,
-          readStatus: state.readStatus,
-          notes: state.notes ?? null,
-          archived: state.archived,
-          readAt,
-          updatedAt: now,
+          userEmail: excluded("user_email"),
+          readStatus: excluded("read_status"),
+          notes: excluded("notes"),
+          archived: excluded("archived"),
+          readAt: excluded("read_at"),
+          updatedAt: excluded("updated_at"),
         },
       });
   }
