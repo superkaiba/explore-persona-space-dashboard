@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 type SavedQuestion = {
@@ -21,17 +22,20 @@ export function ItemQuestionForm({
   const [question, setQuestion] = useState("");
   const [questions, setQuestions] = useState(initialQuestions);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
-  function submit() {
+  function submit(mode: "answer" | "answer_and_update") {
     const trimmed = question.trim();
     if (!trimmed || isPending) return;
     setError(null);
+    setNotice(null);
     startTransition(async () => {
       const response = await fetch("/api/lit/item-question", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ itemId, question: trimmed }),
+        body: JSON.stringify({ itemId, question: trimmed, mode }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.question) {
@@ -39,6 +43,11 @@ export function ItemQuestionForm({
         return;
       }
       setQuestions((current) => [data.question, ...current]);
+      if (data.itemUpdated) {
+        const fields = Array.isArray(data.updatedFields) ? data.updatedFields.join(", ") : "item";
+        setNotice(`Updated ${fields}.`);
+        router.refresh();
+      }
       setQuestion("");
     });
   }
@@ -58,14 +67,25 @@ export function ItemQuestionForm({
         placeholder="Ask a question..."
       />
       {error && <p className="mt-2 text-[11px] text-red-500">{error}</p>}
-      <button
-        type="button"
-        onClick={submit}
-        disabled={isPending || !question.trim()}
-        className="mt-2 rounded-md border border-border bg-fg px-3 py-1.5 text-[12px] font-medium text-canvas disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {isPending ? "Answering..." : "Ask and save"}
-      </button>
+      {notice && <p className="mt-2 text-[11px] text-muted">{notice}</p>}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => submit("answer")}
+          disabled={isPending || !question.trim()}
+          className="rounded-md border border-border bg-fg px-3 py-1.5 text-[12px] font-medium text-canvas disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isPending ? "Working..." : "Ask and save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => submit("answer_and_update")}
+          disabled={isPending || !question.trim()}
+          className="rounded-md border border-border bg-panel px-3 py-1.5 text-[12px] font-medium text-fg hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Ask + update item
+        </button>
+      </div>
       {questions.length > 0 && (
         <div className="mt-4 flex flex-col gap-3">
           {questions.map((saved) => (
