@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, MessageCircle } from "lucide-react";
 import {
   asDate,
   type CleanResult,
@@ -80,6 +80,8 @@ export function DailyCleanResultsUpdate({
 
         <ClaudeAskComposer
           payload={{
+            scopeKind: "global",
+            scopeId: `daily-${selectedKey}`,
             scopeTitle: `Daily update - ${formatDay(selectedDate)}`,
             contextMd: context,
             suggestedQuestion: "What should I take away from today's results?",
@@ -185,8 +187,12 @@ export function CleanResultsLogUpdate({
           </div>
         </header>
 
+        <ClaudeChatExplainer />
+
         <ClaudeAskComposer
           payload={{
+            scopeKind: "global",
+            scopeId: `log-${dayKey(generatedAt)}`,
             scopeTitle: "Results log",
             contextMd: context,
             suggestedQuestion: "What should I take away from the recent clean results?",
@@ -284,6 +290,8 @@ export function WeeklyCleanResultsUpdate({
 
         <ClaudeAskComposer
           payload={{
+            scopeKind: "global",
+            scopeId: "weekly-current",
             scopeTitle: "Weekly update",
             contextMd: context,
             suggestedQuestion: "What are the main takeaways from this week's results?",
@@ -581,6 +589,25 @@ function Summary({ value, label }: { value: number; label: string }) {
       <div className="font-mono text-[18px] leading-none text-fg">{value}</div>
       <div className="mt-1 text-[11px] text-muted">{label}</div>
     </div>
+  );
+}
+
+function ClaudeChatExplainer() {
+  return (
+    <section className="mb-4 rounded-lg border border-border bg-panel p-3">
+      <div className="flex gap-3">
+        <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+        <div className="min-w-0 text-[12px] leading-relaxed text-fg-soft">
+          <div className="font-medium text-fg">Claude Code chats</div>
+          <p className="mt-1 max-w-3xl">
+            Use the top box for the whole log, or a result&apos;s chat button for that
+            result. Each chat starts a Claude Code sidecar that can inspect the VM,
+            database, GitHub issue, and linked artifacts. Result chats open beside the
+            result; closed chats keep their tabs and messages when reopened.
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 

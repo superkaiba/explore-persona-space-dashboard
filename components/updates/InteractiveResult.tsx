@@ -20,6 +20,7 @@ import { dayKey, formatTime } from "@/lib/update-results";
 import {
   ClaudeAskButton,
   ClaudeAskComposer,
+  dispatchClaudeHover,
   type ClaudeAskPayload,
 } from "@/components/updates/MentorClaudePanel";
 import { cn } from "@/lib/utils";
@@ -32,10 +33,16 @@ export function InteractiveResultCard({
   internal: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const askPayload = useMemo(() => resultAskPayload(result), [result]);
 
   return (
     <>
-      <article className="rounded-lg border border-border bg-panel p-4 transition-colors hover:bg-subtle/35">
+      <article
+        data-claude-anchor
+        onMouseEnter={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
+        onFocus={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
+        className="rounded-lg border border-border bg-panel p-4 transition-colors hover:bg-subtle/35"
+      >
         <div className="flex items-start gap-3">
           <button
             type="button"
@@ -62,7 +69,7 @@ export function InteractiveResultCard({
           </button>
           <ClaudeAskButton
             compact
-            payload={resultAskPayload(result)}
+            payload={askPayload}
             label={`Ask Claude about ${result.title}`}
             className="mt-0.5"
           />
@@ -89,10 +96,16 @@ export function InteractiveResultRow({
   internal: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const askPayload = useMemo(() => resultAskPayload(result), [result]);
 
   return (
     <>
-      <div className="rounded-md border border-border bg-panel px-3 py-2 transition-colors hover:bg-subtle/35">
+      <div
+        data-claude-anchor
+        onMouseEnter={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
+        onFocus={(event) => dispatchClaudeHover(askPayload, event.currentTarget)}
+        className="rounded-md border border-border bg-panel px-3 py-2 transition-colors hover:bg-subtle/35"
+      >
         <div className="flex min-w-0 items-start gap-3">
           <ResultBadge result={result} compact />
           <button
@@ -114,7 +127,7 @@ export function InteractiveResultRow({
           </button>
           <ClaudeAskButton
             compact
-            payload={resultAskPayload(result)}
+            payload={askPayload}
             label={`Ask Claude about ${result.title}`}
           />
         </div>
@@ -296,6 +309,8 @@ function InternalLinks({
 
 function resultAskPayload(result: CleanResult): ClaudeAskPayload {
   return {
+    scopeKind: "result",
+    scopeId: result.id,
     scopeTitle: result.title,
     contextMd: resultContext(result),
     suggestedQuestion: "Inspect this result and explain what it means.",
